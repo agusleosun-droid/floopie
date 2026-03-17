@@ -1,22 +1,10 @@
 [phases.setup]
-nixPkgs = [
-  "nodejs_20",
-  "chromium",
-  "nss",
-  "freetype",
-  "harfbuzz",
-  "dejavu_fonts",
-  "which",
-]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm install --legacy-peer-deps"]
 
-[phases.build]
-cmds = ["which chromium || which chromium-browser || echo 'chromium not found'"]
-
 [variables]
-PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
 NODE_ENV = "production"
 
 [start]

@@ -1,261 +1,416 @@
 /**
  * ══════════════════════════════════════════════
- *   OCR WA SENDER — server.js
- *   LAZY INIT: Chromium hanya start saat dipilih
+ *   OCR WA SENDER — server.js v2
+ *   Baileys (no Chromium) + Multiple User
+ *   Dynamic add/remove WA accounts
  * ══════════════════════════════════════════════
  */
 
-const express = require('express');
-const cors = require('cors');
-const qrcode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
+const express   = require('express');
+const cors      = require('cors');
+const qrcode    = require('qrcode');
+const path      = require('path');
+const fs        = require('fs');
+const P         = require('pino');
+
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+} = require('@whiskeysockets/baileys');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-function findChromium() {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH &&
-      fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
+// ──────────────────────────────────────────────
+//   STORAGE
+// ──────────────────────────────────────────────
+const SESSIONS_DIR = path.join(__dirname, 'sessions');
+const CONFIG_FILE  = path.join(__dirname, 'wa-config.json');
+
+if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+
+// Load / inisialisasi config WA
+function loadConfig() {
+  if (fs.existsSync(CONFIG_FILE)) {
+    try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch(e) {}
   }
-  for (const name of ['chromium', 'chromium-browser', 'google-chrome']) {
-    try {
-      const p = execSync(`which ${name} 2>/dev/null`).toString().trim();
-      if (p && fs.existsSync(p)) return p;
-    } catch(e) {}
-  }
-  try {
-    const p = execSync(`find /nix/store -name "chromium" -type f 2>/dev/null | grep -v sandbox | head -1`).toString().trim();
-    if (p && fs.existsSync(p)) return p;
-  } catch(e) {}
-  return undefined;
+  // Default 3 WA
+  const cfg = {
+    accounts: [
+      { id: 1, label: 'WhatsApp 1' },
+      { id: 2, label: 'WhatsApp 2' },
+      { id: 3, label: 'WhatsApp 3' },
+    ],
+    nextId: 4,
+  };
+  saveConfig(cfg);
+  return cfg;
 }
 
-const CHROMIUM_PATH = findChromium();
-console.log(`[Chromium] ${CHROMIUM_PATH || 'bundled'}`);
-
-const WA_COUNT = 3;
-const clients = {};
-const clientState = {};
-const qrExpireTimers = {};
-const reinitTimers = {};
-const LABELS = { 1:'WhatsApp 1', 2:'WhatsApp 2', 3:'WhatsApp 3' };
-const QR_TTL = 60000;
-
-for (let i = 1; i <= WA_COUNT; i++) {
-  clientState[i] = { status: 'idle', qrDataUrl: null, label: LABELS[i], phoneNumber: null, pushname: null };
+function saveConfig(cfg) {
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
 
+let config = loadConfig();
+
+// ──────────────────────────────────────────────
+//   STATE
+// ──────────────────────────────────────────────
+const sockets      = {};   // baileys socket per id
+const clientState  = {};   // status per id
+const qrTimers     = {};   // QR expire timer
+const reinitTimers = {};   // guard double reinit
+const QR_TTL       = 60000;
+
+const logger = P({ level: 'silent' });
+
+function defaultState(id, label) {
+  return { status: 'idle', qrDataUrl: null, label: label || `WhatsApp ${id}`, phoneNumber: null, pushname: null };
+}
+
+// Init state semua account dari config
+config.accounts.forEach(acc => {
+  clientState[acc.id] = defaultState(acc.id, acc.label);
+});
+
+// ──────────────────────────────────────────────
+//   HELPERS
+// ──────────────────────────────────────────────
 function clearQR(id) {
   if (clientState[id]) clientState[id].qrDataUrl = null;
-  if (qrExpireTimers[id]) { clearTimeout(qrExpireTimers[id]); qrExpireTimers[id] = null; }
+  if (qrTimers[id]) { clearTimeout(qrTimers[id]); qrTimers[id] = null; }
 }
 
-function scheduleReinit(id, delay = 3000) {
+function scheduleReinit(id, delay = 5000) {
   if (reinitTimers[id]) return;
-  reinitTimers[id] = setTimeout(() => { reinitTimers[id] = null; initClient(id); }, delay);
+  reinitTimers[id] = setTimeout(() => {
+    reinitTimers[id] = null;
+    startClient(id);
+  }, delay);
 }
 
-async function initClient(id) {
-  if (clients[id]) {
-    try { await clients[id].destroy(); } catch(e) {}
-    clients[id] = null;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function getLabel(id) {
+  const acc = config.accounts.find(a => a.id === id);
+  return acc?.label || `WhatsApp ${id}`;
+}
+
+// ──────────────────────────────────────────────
+//   START CLIENT (Baileys)
+// ──────────────────────────────────────────────
+async function startClient(id) {
+  // Destroy socket lama
+  if (sockets[id]) {
+    try { sockets[id].end(); } catch(e) {}
+    sockets[id] = null;
   }
 
-  console.log(`[WA${id}] Starting Chromium...`);
-  clientState[id] = { status: 'loading', qrDataUrl: null, label: LABELS[id], phoneNumber: null, pushname: null };
+  const label = getLabel(id);
+  console.log(`[WA${id}] Starting (${label})...`);
+  clientState[id] = defaultState(id, label);
+  clientState[id].status = 'loading';
 
-  const cfg = {
-    headless: true,
-    args: [
-      '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas','--no-first-run','--no-zygote',
-      '--single-process','--disable-gpu','--disable-extensions',
-      '--disable-background-networking','--disable-default-apps',
-      '--disable-sync','--disable-translate','--hide-scrollbars',
-      '--mute-audio','--safebrowsing-disable-auto-update',
-      '--js-flags=--max-old-space-size=256',
-    ]
-  };
-  if (CHROMIUM_PATH) cfg.executablePath = CHROMIUM_PATH;
+  const sessionDir = path.join(SESSIONS_DIR, `wa-${id}`);
+  if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
-  const client = new Client({
-    authStrategy: new LocalAuth({ clientId: `wa-client-${id}` }),
-    puppeteer: cfg,
-  });
-
-  client.on('qr', async (qr) => {
-    console.log(`[WA${id}] QR received`);
-    try {
-      clearQR(id);
-      const dataUrl = await qrcode.toDataURL(qr, { width: 256, margin: 1 });
-      clientState[id].status = 'qr';
-      clientState[id].qrDataUrl = dataUrl;
-      qrExpireTimers[id] = setTimeout(() => {
-        if (clientState[id]?.status === 'qr') {
-          clientState[id].qrDataUrl = null;
-          console.log(`[WA${id}] QR expired`);
-        }
-      }, QR_TTL);
-    } catch(e) { console.error(`[WA${id}] QR error:`, e.message); }
-  });
-
-  client.on('ready', () => {
-    console.log(`[WA${id}] Ready! ✓`);
-    clearQR(id);
-    const info = client.info;
-    clientState[id].status = 'ready';
-    clientState[id].phoneNumber = info?.wid?.user || null;
-    clientState[id].pushname = info?.pushname || null;
-  });
-
-  client.on('auth_failure', async (msg) => {
-    console.error(`[WA${id}] Auth failure:`, msg);
-    clearQR(id);
+  let state, saveCreds;
+  try {
+    ({ state, saveCreds } = await useMultiFileAuthState(sessionDir));
+  } catch(e) {
+    console.error(`[WA${id}] Auth state error:`, e.message);
     clientState[id].status = 'idle';
-    try { await client.destroy(); } catch(e) {}
-    clients[id] = null;
+    return;
+  }
+
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    logger,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
+    printQRInTerminal: false,
+    browser: ['OCR WA Sender', 'Chrome', '120.0'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 30000,
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    getMessage: async () => ({ conversation: '' }),
   });
 
-  client.on('disconnected', async (reason) => {
-    console.warn(`[WA${id}] Disconnected: ${reason}`);
-    clearQR(id);
-    clientState[id].status = 'idle';
-    clientState[id].phoneNumber = null;
-    clientState[id].pushname = null;
-    try { await client.destroy(); } catch(e) {}
-    clients[id] = null;
-    if (reason !== 'LOGOUT') scheduleReinit(id, 5000);
-  });
+  sock.ev.on('creds.update', saveCreds);
 
-  client.initialize();
-  clients[id] = client;
-}
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-setInterval(async () => {
-  for (let i = 1; i <= WA_COUNT; i++) {
-    if (clientState[i]?.status !== 'ready') continue;
-    try {
-      const state = await clients[i].getState();
-      if (!state) throw new Error('No state');
-    } catch(e) {
-      console.warn(`[WA${i}] Health check failed — marking idle`);
-      clientState[i].status = 'idle';
-      clientState[i].phoneNumber = null;
-      clientState[i].pushname = null;
-      clearQR(i);
-      try { await clients[i].destroy(); } catch(_) {}
-      clients[i] = null;
+    // QR baru tersedia
+    if (qr) {
+      console.log(`[WA${id}] QR received`);
+      try {
+        clearQR(id);
+        const dataUrl = await qrcode.toDataURL(qr, { width: 256, margin: 1 });
+        clientState[id].status = 'qr';
+        clientState[id].qrDataUrl = dataUrl;
+        qrTimers[id] = setTimeout(() => {
+          if (clientState[id]?.status === 'qr') {
+            clientState[id].qrDataUrl = null;
+            console.log(`[WA${id}] QR expired`);
+          }
+        }, QR_TTL);
+      } catch(e) { console.error(`[WA${id}] QR error:`, e.message); }
     }
-  }
+
+    // Terhubung
+    if (connection === 'open') {
+      console.log(`[WA${id}] Ready! ✓`);
+      clearQR(id);
+      clientState[id].status = 'ready';
+      try {
+        const user = sock.user;
+        if (user) {
+          clientState[id].phoneNumber = user.id.split(':')[0].replace('@s.whatsapp.net','');
+          clientState[id].pushname = user.name || '';
+        }
+      } catch(e) {}
+    }
+
+    // Terputus
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const reason = DisconnectReason;
+      console.warn(`[WA${id}] Disconnected (code: ${code})`);
+      clearQR(id);
+      clientState[id].status = 'idle';
+      clientState[id].phoneNumber = null;
+      clientState[id].pushname = null;
+
+      // Logout paksa → hapus session
+      if (code === DisconnectReason.loggedOut) {
+        console.log(`[WA${id}] Logged out — clearing session`);
+        try {
+          fs.rmSync(path.join(SESSIONS_DIR, `wa-${id}`), { recursive: true, force: true });
+        } catch(e) {}
+        clientState[id].status = 'idle';
+        sockets[id] = null;
+        return; // tidak reinit otomatis
+      }
+
+      // Error lain → reinit otomatis
+      if (code !== DisconnectReason.loggedOut) {
+        scheduleReinit(id, 5000);
+      }
+    }
+  });
+
+  sockets[id] = sock;
+}
+
+// ──────────────────────────────────────────────
+//   HEALTH CHECK tiap 60 detik
+// ──────────────────────────────────────────────
+setInterval(() => {
+  config.accounts.forEach(async acc => {
+    const id = acc.id;
+    if (clientState[id]?.status !== 'ready') return;
+    try {
+      const state = sockets[id]?.authState?.creds;
+      if (!sockets[id] || !sockets[id].user) throw new Error('No user');
+    } catch(e) {
+      console.warn(`[WA${id}] Health check failed — marking idle`);
+      clientState[id].status = 'idle';
+      clientState[id].phoneNumber = null;
+      clientState[id].pushname = null;
+      clearQR(id);
+    }
+  });
 }, 60000);
 
+// ══════════════════════════════════════════════
+//   API ENDPOINTS
+// ══════════════════════════════════════════════
+
+// Status semua WA
 app.get('/api/wa/all-status', (req, res) => {
   const result = {};
-  for (let i = 1; i <= WA_COUNT; i++) {
-    const s = clientState[i] || {};
-    result[i] = { id: i, label: LABELS[i], status: s.status || 'idle', phoneNumber: s.phoneNumber, pushname: s.pushname };
-  }
+  config.accounts.forEach(acc => {
+    const s = clientState[acc.id] || defaultState(acc.id, acc.label);
+    result[acc.id] = {
+      id: acc.id,
+      label: acc.label,
+      status: s.status,
+      phoneNumber: s.phoneNumber,
+      pushname: s.pushname,
+    };
+  });
   res.json(result);
 });
 
+// Status 1 WA
 app.get('/api/wa/:id/status', (req, res) => {
   const id = parseInt(req.params.id);
-  if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
   const s = clientState[id];
-  res.json({ id, label: LABELS[id], status: s.status, phoneNumber: s.phoneNumber, pushname: s.pushname });
+  if (!s) return res.status(404).json({ error: 'WA not found' });
+  res.json({ id, label: getLabel(id), status: s.status, phoneNumber: s.phoneNumber, pushname: s.pushname });
 });
 
+// Activate WA (lazy start)
 app.post('/api/wa/:id/activate', async (req, res) => {
   const id = parseInt(req.params.id);
   if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
   const status = clientState[id].status;
   if (status === 'ready') return res.json({ status: 'ready' });
   if (status === 'loading' || status === 'qr') return res.json({ status });
-  await initClient(id);
+  await startClient(id);
   res.json({ status: 'loading' });
 });
 
+// QR
 app.get('/api/wa/:id/qr', (req, res) => {
   const id = parseInt(req.params.id);
-  if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
   const s = clientState[id];
+  if (!s) return res.status(404).json({ error: 'WA not found' });
   if (s.status !== 'qr' || !s.qrDataUrl) return res.json({ status: s.status, qr: null });
   res.json({ status: 'qr', qr: s.qrDataUrl });
 });
 
+// Grup — retry loop sampai dapat
 app.get('/api/wa/:id/groups', async (req, res) => {
   const id = parseInt(req.params.id);
-  if (!clients[id] || clientState[id]?.status !== 'ready')
+  if (!sockets[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
   try {
-    // Retry sampai chat ter-load (max 5x, tiap 2 detik)
-    let chats = [];
+    // Retry max 5x tiap 2 detik
+    let groupMap = {};
     for (let attempt = 1; attempt <= 5; attempt++) {
       await sleep(2000);
-      chats = await clients[id].getChats();
-      console.log(`[WA${id}] Attempt ${attempt}: chats=${chats.length}, groups=${chats.filter(c=>c.isGroup).length}`);
-      if (chats.length > 0) break;
+      try {
+        groupMap = await sockets[id].groupFetchAllParticipating();
+        const count = Object.keys(groupMap).length;
+        console.log(`[WA${id}] Attempt ${attempt}: ${count} groups`);
+        if (count > 0) break;
+      } catch(e) {
+        console.warn(`[WA${id}] getGroups attempt ${attempt} error: ${e.message}`);
+        if (attempt === 5) throw e;
+      }
     }
-    const groups = chats
-      .filter(c => c.isGroup)
-      .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const groups = Object.entries(groupMap).map(([jid, g]) => ({
+      id: jid,
+      name: g.subject || jid,
+      participantCount: g.participants?.length || 0,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
     res.json({ groups });
   } catch(e) {
     console.error(`[WA${id}] Groups error: ${e.message}`);
-    if (e.message.includes('detached') || e.message.includes('Frame') || e.message.includes('Session')) {
-      clientState[id].status = 'idle';
-      clients[id] = null;
-      return res.status(503).json({ error: 'WA terputus, silakan pilih WA lagi' });
-    }
     res.status(500).json({ error: e.message });
   }
 });
 
+// Kirim pesan
 app.post('/api/wa/:id/send', async (req, res) => {
   const id = parseInt(req.params.id);
-  if (!clients[id] || clientState[id]?.status !== 'ready')
+  if (!sockets[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
+
   const { groupId, messages, delay = 800 } = req.body;
   if (!groupId || !Array.isArray(messages) || messages.length === 0)
     return res.status(400).json({ error: 'groupId dan messages diperlukan' });
+
   const safeDelay = Math.min(Math.max(parseInt(delay) || 800, 500), 5000);
   const results = [];
+
   for (let i = 0; i < messages.length; i++) {
     try {
-      await clients[id].sendMessage(groupId, messages[i]);
+      await sockets[id].sendMessage(groupId, { text: messages[i] });
       results.push({ index: i, message: messages[i], status: 'sent' });
       console.log(`[WA${id}] Sent [${i+1}/${messages.length}]: ${messages[i]}`);
     } catch(e) {
       results.push({ index: i, message: messages[i], status: 'error', error: e.message });
+      console.error(`[WA${id}] Send error: ${e.message}`);
     }
     if (i < messages.length - 1) await sleep(safeDelay);
   }
+
   const sent = results.filter(r => r.status === 'sent').length;
   res.json({ success: true, total: messages.length, sent, errors: results.length - sent, results });
 });
 
+// Restart / reset WA
 app.post('/api/wa/:id/restart', async (req, res) => {
   const id = parseInt(req.params.id);
   if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
-  if (clients[id]) { try { await clients[id].destroy(); } catch(e) {} clients[id] = null; }
+  if (sockets[id]) { try { sockets[id].end(); } catch(e) {} sockets[id] = null; }
+  clearQR(id);
   clientState[id].status = 'idle';
+  clientState[id].phoneNumber = null;
+  clientState[id].pushname = null;
   res.json({ success: true });
 });
 
-app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+// ── TAMBAH WA BARU ──
+app.post('/api/wa/add', (req, res) => {
+  const { label } = req.body;
+  const id = config.nextId++;
+  const newLabel = label || `WhatsApp ${id}`;
+  config.accounts.push({ id, label: newLabel });
+  saveConfig(config);
+  clientState[id] = defaultState(id, newLabel);
+  console.log(`[WA${id}] Added: ${newLabel}`);
+  res.json({ success: true, id, label: newLabel });
+});
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+// ── HAPUS WA ──
+app.delete('/api/wa/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!config.accounts.find(a => a.id === id))
+    return res.status(404).json({ error: 'WA not found' });
+
+  // Stop socket
+  if (sockets[id]) { try { sockets[id].end(); } catch(e) {} sockets[id] = null; }
+  clearQR(id);
+  delete clientState[id];
+
+  // Hapus session
+  try { fs.rmSync(path.join(SESSIONS_DIR, `wa-${id}`), { recursive: true, force: true }); } catch(e) {}
+
+  // Update config
+  config.accounts = config.accounts.filter(a => a.id !== id);
+  saveConfig(config);
+  console.log(`[WA${id}] Removed`);
+  res.json({ success: true });
+});
+
+// ── RENAME WA ──
+app.patch('/api/wa/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const acc = config.accounts.find(a => a.id === id);
+  if (!acc) return res.status(404).json({ error: 'WA not found' });
+  const { label } = req.body;
+  if (label) {
+    acc.label = label;
+    if (clientState[id]) clientState[id].label = label;
+    saveConfig(config);
+  }
+  res.json({ success: true, id, label: acc.label });
+});
+
+// Health
+app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), accounts: config.accounts.length }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  ✓ Server running on port ${PORT}`);
-  console.log(`  ✓ Chromium: ${CHROMIUM_PATH || 'bundled'}`);
-  console.log('  ✓ Lazy init — Chromium starts only when WA is selected\n');
+  console.log(`  ✓ Baileys mode (no Chromium)`);
+  console.log(`  ✓ ${config.accounts.length} WA accounts loaded`);
+  console.log('  ✓ Lazy init — activate saat dipilih\n');
 });

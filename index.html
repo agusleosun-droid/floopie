@@ -584,8 +584,9 @@ input.edit:focus{
 
       <!-- STEP 1: Pilih WA -->
       <div id="waStep1">
-        <div style="font-size:.76rem;color:rgba(80,60,140,.4);margin-bottom:.8rem">
-          Pilih akun WhatsApp yang akan digunakan untuk mengirim pesan:
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem">
+          <span style="font-size:.76rem;color:rgba(80,60,140,.4)">Pilih akun WhatsApp:</span>
+          <button class="btn-green btn-primary" style="padding:.3rem .75rem;font-size:.72rem" onclick="waTambah()">+ Tambah WA</button>
         </div>
         <div class="wa-accounts" id="waAccountsList">
           <!-- diisi JS -->
@@ -906,7 +907,12 @@ document.querySelectorAll('.panel').forEach(panel=>{
   function renderWAAccounts() {
     const list = document.getElementById('waAccountsList');
     list.innerHTML = '';
-    for (let i = 1; i <= 3; i++) {
+    const ids = Object.keys(waStatuses).map(Number).sort((a,b)=>a-b);
+    if (!ids.length) {
+      list.innerHTML = '<div style="text-align:center;font-size:.78rem;color:rgba(80,60,140,.35);padding:.8rem">Belum ada WA. Klik "+ Tambah WA"</div>';
+      return;
+    }
+    ids.forEach(i => {
       const s = waStatuses[i] || { status: 'idle', label: `WhatsApp ${i}` };
       const statusLabel = {
         ready: '✓ Terhubung',
@@ -919,18 +925,51 @@ document.querySelectorAll('.panel').forEach(panel=>{
       const card = document.createElement('div');
       card.className = 'wa-account-card';
       card.dataset.id = i;
+      card.style.position = 'relative';
       card.innerHTML = `
         <div class="wa-account-icon">📱</div>
         <div class="wa-account-info">
-          <div class="wa-account-label">${s.label}</div>
+          <div class="wa-account-label">${escHtml(s.label)}</div>
           <div class="wa-account-sub">${s.pushname ? `${s.pushname} · +${s.phoneNumber}` : statusLabel}</div>
         </div>
-        <div class="wa-status-dot ${s.status === 'idle' ? 'disconnected' : s.status}"></div>
+        <div class="wa-status-dot ${s.status === 'idle' ? 'disconnected' : s.status}" style="margin-right:.3rem"></div>
+        <button onclick="event.stopPropagation();waHapus(${i})" title="Hapus" style="
+          width:20px;height:20px;border-radius:6px;background:rgba(200,60,60,.1);
+          border:1px solid rgba(200,60,60,.2);color:rgba(180,50,50,.55);
+          font-size:.7rem;padding:0;cursor:pointer;flex-shrink:0;
+          display:flex;align-items:center;justify-content:center;
+        ">✕</button>
       `;
       card.onclick = () => selectWA(i, card);
       list.appendChild(card);
-    }
+    });
   }
+
+  window.waTambah = async function() {
+    const label = prompt('Nama WA baru (contoh: WhatsApp Kantor):');
+    if (!label) return;
+    try {
+      const res = await fetch(`${API}/wa/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadWAStatuses();
+      }
+    } catch(e) { alert('Gagal tambah WA: ' + e.message); }
+  };
+
+  window.waHapus = async function(id) {
+    const s = waStatuses[id];
+    if (!confirm(`Hapus "${s?.label || 'WA '+id}"? Session akan dihapus.`)) return;
+    try {
+      await fetch(`${API}/wa/${id}`, { method: 'DELETE' });
+      await loadWAStatuses();
+      if (selectedWA === id) { selectedWA = null; setNextBtn('Pilih WA dulu →', true); }
+    } catch(e) { alert('Gagal hapus: ' + e.message); }
+  };
 
   async function selectWA(id, card) {
     document.querySelectorAll('.wa-account-card').forEach(c => c.classList.remove('selected'));
@@ -938,7 +977,6 @@ document.querySelectorAll('.panel').forEach(panel=>{
     selectedWA = id;
 
     const s = waStatuses[id];
-
     if (s?.status === 'ready') {
       setNextBtn('Pilih Grup →', false);
     } else if (s?.status === 'qr') {
@@ -946,24 +984,20 @@ document.querySelectorAll('.panel').forEach(panel=>{
     } else if (s?.status === 'loading') {
       setNextBtn('Sedang memuat...', true);
     } else {
-      // idle / disconnected — activate dulu
+      // idle → activate
       setNextBtn('Mengaktifkan WA...', true);
       try {
         await fetch(`${API}/wa/${id}/activate`, { method: 'POST' });
-        // Refresh status
         const res = await fetch(`${API}/wa/all-status`);
         waStatuses = await res.json();
         renderWAAccounts();
-        // Re-select card yang sama
         const newCard = document.querySelector(`.wa-account-card[data-id="${id}"]`);
-        if (newCard) { newCard.classList.add('selected'); }
-        const newStatus = waStatuses[id]?.status;
-        if (newStatus === 'ready') setNextBtn('Pilih Grup →', false);
-        else if (newStatus === 'qr' || newStatus === 'loading') setNextBtn('Scan QR →', false);
+        if (newCard) newCard.classList.add('selected');
+        const ns = waStatuses[id]?.status;
+        if (ns === 'ready') setNextBtn('Pilih Grup →', false);
+        else if (ns === 'qr' || ns === 'loading') setNextBtn('Scan QR →', false);
         else setNextBtn('WA tidak tersedia', true);
-      } catch(e) {
-        setNextBtn('Gagal aktifkan WA', true);
-      }
+      } catch(e) { setNextBtn('Gagal aktifkan WA', true); }
     }
   }
 
