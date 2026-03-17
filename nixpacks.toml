@@ -3,10 +3,9 @@ nixPkgs = [
   "chromium",
   "nss",
   "freetype",
-  "freetype",
   "harfbuzz",
-  "ca-certificates",
-  "ttf-dejavu",
+  "cacert",
+  "dejavu_fonts",
 ]
 
 [variables]
