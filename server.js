@@ -183,10 +183,30 @@ async function initClient(id) {
   clients[id] = client;
 }
 
-// Init semua 3 WA dengan jeda 5 detik agar tidak OOM
+// Inisialisasi semua 3 WA dengan jeda 5 detik agar tidak OOM
 for (let i = 1; i <= WA_COUNT; i++) {
   setTimeout(() => initClient(i), (i - 1) * 5000);
 }
+
+// ──────────────────────────────────────────────
+//   HEALTH CHECK: deteksi sesi mati setiap 30 detik
+// ──────────────────────────────────────────────
+setInterval(async () => {
+  for (let i = 1; i <= WA_COUNT; i++) {
+    if (clientState[i]?.status !== 'ready') continue;
+    try {
+      // Coba ping WA — kalau gagal berarti sesi mati
+      const state = await clients[i].getState();
+      if (!state) throw new Error('No state');
+    } catch(e) {
+      console.warn(`[WA${i}] Health check failed: ${e.message} — reinitializing`);
+      clientState[i].status = 'disconnected';
+      clearQR(i);
+      try { await clients[i].destroy(); } catch(_) {}
+      scheduleReinit(i, 2000);
+    }
+  }
+}, 30000);
 
 // ──────────────────────────────────────────────
 //   API ENDPOINTS
@@ -227,29 +247,46 @@ app.get('/api/wa/:id/groups', async (req, res) => {
   if (!clients[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
   try {
-    // Tunggu sebentar agar WA stabil setelah ready
-    await sleep(1000);
+    await sleep(2000);
     const chats = await clients[id].getChats();
+    console.log(`[WA${id}] Total chats: ${chats.length}, groups: ${chats.filter(c=>c.isGroup).length}`);
     const groups = chats
       .filter(c => c.isGroup)
       .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ groups });
   } catch (e) {
-    console.error(`[WA${id}] Groups error:`, e.message);
-    // Kalau gagal, coba sekali lagi setelah 2 detik
-    try {
-      await sleep(2000);
-      const chats = await clients[id].getChats();
-      const groups = chats
-        .filter(c => c.isGroup)
-        .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      res.json({ groups });
-    } catch (e2) {
-      console.error(`[WA${id}] Groups retry error:`, e2.message);
-      res.status(500).json({ error: e2.message });
+    console.error(`[WA${id}] Groups error: ${e.message}`);
+    // Detached frame = Chromium crash, reinit
+    if (e.message.includes('detached') || e.message.includes('Frame') || e.message.includes('Session closed')) {
+      console.log(`[WA${id}] Chromium crashed, reinitializing...`);
+      clientState[id].status = 'disconnected';
+      scheduleReinit(id, 1000);
+      return res.status(503).json({ error: 'WA restart, silakan tunggu 15 detik lalu coba lagi' });
     }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Debug: cek raw chats
+app.get('/api/wa/:id/debug', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!clients[id] || clientState[id]?.status !== 'ready')
+    return res.status(400).json({ error: 'WA not ready' });
+  try {
+    const chats = await clients[id].getChats();
+    res.json({
+      total: chats.length,
+      groups: chats.filter(c => c.isGroup).length,
+      sample: chats.slice(0, 5).map(c => ({ name: c.name, isGroup: c.isGroup }))
+    });
+  } catch(e) {
+    if (e.message.includes('detached') || e.message.includes('Frame')) {
+      clientState[id].status = 'disconnected';
+      scheduleReinit(id, 1000);
+      return res.status(503).json({ error: 'Chromium crashed, reinitializing...' });
+    }
+    res.status(500).json({ error: e.message });
   }
 });
 
