@@ -1089,16 +1089,36 @@ document.querySelectorAll('.panel').forEach(panel=>{
     updateStepIndicators(2);
     setNextBtn('Pilih grup dulu →', true);
     document.getElementById('waModalTitle').textContent = 'Pilih Grup';
-    document.getElementById('groupsList').innerHTML =
-      '<div style="text-align:center;padding:.8rem;font-size:.78rem;color:rgba(80,60,140,.4)"><div class="wa-spinner" style="margin:0 auto .4rem"></div>Memuat grup...</div>';
     document.getElementById('groupSearch').value = '';
+
+    // Tampilkan loading dengan pesan progress
+    const loadingMsgs = [
+      'Memuat daftar grup...',
+      'Sinkronisasi chat WA...',
+      'Mengambil grup...',
+      'Hampir selesai...',
+      'Tunggu sebentar...',
+    ];
+    let msgIdx = 0;
+    document.getElementById('groupsList').innerHTML =
+      `<div id="groupLoadMsg" style="text-align:center;padding:.8rem;font-size:.78rem;color:rgba(80,60,140,.4)">
+        <div class="wa-spinner" style="margin:0 auto .4rem"></div>
+        <span id="groupLoadTxt">${loadingMsgs[0]}</span>
+      </div>`;
+    const loadTimer = setInterval(() => {
+      msgIdx = (msgIdx + 1) % loadingMsgs.length;
+      const el = document.getElementById('groupLoadTxt');
+      if (el) el.textContent = loadingMsgs[msgIdx];
+    }, 2000);
 
     try {
       const res = await fetch(`${API}/wa/${selectedWA}/groups`);
+      clearInterval(loadTimer);
       const data = await res.json();
       allGroups = data.groups || [];
       renderGroupList(allGroups);
     } catch (e) {
+      clearInterval(loadTimer);
       document.getElementById('groupsList').innerHTML =
         `<div style="text-align:center;font-size:.78rem;color:rgba(180,50,50,.6);padding:.8rem">Gagal memuat grup: ${e.message}</div>`;
     }

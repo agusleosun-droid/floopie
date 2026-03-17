@@ -194,9 +194,14 @@ app.get('/api/wa/:id/groups', async (req, res) => {
   if (!clients[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
   try {
-    await sleep(1500);
-    const chats = await clients[id].getChats();
-    console.log(`[WA${id}] chats: ${chats.length}, groups: ${chats.filter(c=>c.isGroup).length}`);
+    // Retry sampai chat ter-load (max 5x, tiap 2 detik)
+    let chats = [];
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      await sleep(2000);
+      chats = await clients[id].getChats();
+      console.log(`[WA${id}] Attempt ${attempt}: chats=${chats.length}, groups=${chats.filter(c=>c.isGroup).length}`);
+      if (chats.length > 0) break;
+    }
     const groups = chats
       .filter(c => c.isGroup)
       .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
