@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCR Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'DM Sans',-apple-system,'Helvetica Neue',sans-serif;
+  min-height:100vh;overflow-x:hidden;
+  padding-bottom:164px;
+}
+/* ── BG ── */
+.wallpaper{
+  position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 55% 45% at 8% 12%, #d4dff7 0%,transparent 60%),
+    radial-gradient(ellipse 45% 40% at 92% 8%,  #e8d4f0 0%,transparent 55%),
+    radial-gradient(ellipse 50% 45% at 75% 85%, #cce8f4 0%,transparent 55%),
+    radial-gradient(ellipse 40% 35% at 18% 82%, #d8f0e4 0%,transparent 50%),
+    radial-gradient(ellipse 60% 55% at 55% 45%, #ede8f8 0%,transparent 60%),
+    linear-gradient(145deg,#eaecf8 0%,#f5f3fa 40%,#edf5f8 70%,#eaf4ee 100%);
+}
+.blob{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;z-index:1}
+.b1{width:420px;height:420px;background:rgba(180,195,255,.28);top:-60px;left:-80px}
+.b2{width:380px;height:380px;background:rgba(210,180,240,.22);top:20px;right:-60px}
+.b3{width:460px;height:460px;background:rgba(160,220,240,.2);bottom:164px;left:30%}
+.b4{width:300px;height:300px;background:rgba(180,240,210,.18);bottom:200px;right:5%}
+/* ── LAYOUT ── */
+.container{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:2.8rem 2rem 2rem}
+.header{text-align:center;margin-bottom:3rem}
+.pill{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.28rem .9rem;border-radius:999px;
+  background:rgba(255,255,255,.35);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.7);
+  font-size:.7rem;font-weight:600;letter-spacing:.08em;
+  color:rgba(80,60,120,.55);text-transform:uppercase;
+  margin-bottom:1.2rem;
+  box-shadow:0 2px 12px rgba(100,80,160,.08),0 1px 0 rgba(255,255,255,.9) inset;
+}
+.pill-dot{width:5px;height:5px;border-radius:50%;background:rgba(120,90,180,.4);animation:blink 2.4s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+h1{
+  font-size:3.2rem;font-weight:700;letter-spacing:-.05em;line-height:1.05;
+  background:linear-gradient(135deg,#3d2e6e 0%,#5a4a8a 50%,#7a6aaa 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:.5rem;
+}
+.subtitle{color:rgba(50,40,90,.35);font-size:.88rem;font-weight:400}
+.glass{
+  background:rgba(255,255,255,.22);
+  backdrop-filter:blur(52px) saturate(1.9) brightness(1.06);
+  -webkit-backdrop-filter:blur(52px) saturate(1.9) brightness(1.06);
+  border-top:1px solid rgba(255,255,255,.85);
+  border-left:1px solid rgba(255,255,255,.7);
+  border-right:1px solid rgba(255,255,255,.4);
+  border-bottom:1px solid rgba(255,255,255,.3);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.8) inset,
+    0 -1px 0 rgba(120,100,180,.04) inset,
+    0 28px 56px rgba(80,60,140,.1),
+    0 6px 18px rgba(80,60,140,.06),
+    0 2px 4px rgba(80,60,140,.04);
+}
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem}
+.panel{
+  border-radius:24px;overflow:hidden;
+  transition:transform .35s cubic-bezier(.22,1,.36,1),box-shadow .35s cubic-bezier(.22,1,.36,1);
+  will-change:transform;transform-style:preserve-3d;
+}
+.panel-header{
+  padding:1.1rem 1.65rem;
+  border-bottom:1px solid rgba(120,100,180,.08);
+  display:flex;justify-content:space-between;align-items:center;
+  font-weight:600;font-size:.85rem;
+  color:rgba(50,35,90,.5);letter-spacing:-.01em;
+  background:rgba(255,255,255,.1);
+}
+.panel-body{padding:1.45rem}
+.upload{
+  border:1px dashed rgba(100,80,160,.18);
+  border-radius:18px;padding:2.2rem 1.5rem;
+  text-align:center;cursor:pointer;
+  background:rgba(255,255,255,.14);
+  min-height:155px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:.55rem;
+  transition:all .25s cubic-bezier(.22,1,.36,1);
+}
+.upload:hover,.upload.drag-over{
+  border-color:rgba(100,80,160,.35);
+  background:rgba(255,255,255,.3);
+  transform:scale(1.012);
+}
+input[type=file]{display:none}
+.upload-icon{font-size:2rem;line-height:1;opacity:.45}
+.upload-title{font-weight:600;color:rgba(50,35,90,.55);font-size:.9rem}
+.upload-hint{font-size:.75rem;color:rgba(50,35,90,.3)}
+#previewImg{
+  width:100%;border-radius:16px;margin-top:1.1rem;
+  border:1px solid rgba(255,255,255,.6);display:none;
+  max-height:280px;object-fit:contain;
+  background:rgba(255,255,255,.2);
+  box-shadow:0 4px 20px rgba(80,60,140,.08);
+  animation:fadeUp .35s cubic-bezier(.22,1,.36,1);
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.loading-wrap{margin-top:.9rem;display:none}
+.loading-wrap.active{display:block;animation:fadeUp .2s ease}
+.loading-bar{height:2px;border-radius:99px;background:rgba(100,80,160,.1);overflow:hidden}
+.loading-fill{
+  height:100%;
+  background:linear-gradient(90deg,rgba(160,130,220,.2),rgba(160,130,220,.6),rgba(160,130,220,.2));
+  background-size:250%;animation:shim 1.6s linear infinite;
+}
+@keyframes shim{0%{background-position:200%}100%{background-position:0%}}
+.loading-label{font-size:.72rem;color:rgba(80,60,140,.4);margin-top:.45rem;text-align:center;font-weight:500}
+.result{
+  background:rgba(255,255,255,.16);
+  border:1px solid rgba(255,255,255,.5);
+  border-radius:16px;padding:1.1rem 1.2rem;
+  font-family:'JetBrains Mono',monospace;font-size:.77rem;
+  white-space:pre-wrap;max-height:400px;overflow:auto;
+  color:rgba(40,30,75,.68);line-height:1.85;min-height:80px;
+  scrollbar-width:thin;scrollbar-color:rgba(120,100,180,.15) transparent;
+}
+.result::-webkit-scrollbar{width:4px}
+.result::-webkit-scrollbar-thumb{background:rgba(120,100,180,.15);border-radius:99px}
+button{
+  padding:.46rem 1.05rem;border:none;border-radius:11px;
+  font-weight:600;cursor:pointer;font-size:.8rem;
+  transition:all .2s cubic-bezier(.22,1,.36,1);
+  font-family:'DM Sans',inherit;letter-spacing:-.01em;
+}
+button:active{transform:scale(.95)}
+.btn-primary{
+  background:linear-gradient(135deg,rgba(80,60,140,.78) 0%,rgba(100,75,160,.72) 100%);
+  color:rgba(255,255,255,.92);
+  backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:0 2px 12px rgba(80,60,140,.25),0 1px 0 rgba(255,255,255,.15) inset;
+}
+.btn-primary:hover{
+  background:linear-gradient(135deg,rgba(80,60,140,.9) 0%,rgba(100,75,160,.85) 100%);
+  box-shadow:0 4px 18px rgba(80,60,140,.35),0 1px 0 rgba(255,255,255,.15) inset;
+  transform:translateY(-1px);
+}
+.mode-group{
+  display:flex;gap:2px;position:relative;
+  background:rgba(100,80,160,.07);
+  border:1px solid rgba(255,255,255,.5);
+  border-radius:11px;padding:3px;
+  backdrop-filter:blur(12px);
+}
+.mode-group::before{
+  content:'';position:absolute;top:3px;left:3px;
+  width:53px;height:30px;
+  background:rgba(255,255,255,.72);
+  border-radius:8px;
+  transition:transform .4s cubic-bezier(.25,.46,.45,.94);
+  box-shadow:0 1px 6px rgba(80,60,140,.1);
+  pointer-events:none;z-index:0;
+}
+.mode-group.edit-mode::before{transform:translateX(57px)}
+.mode-btn{
+  background:transparent;color:rgba(60,45,100,.38);border:none;
+  padding:.35rem .85rem;border-radius:8px;position:relative;z-index:1;
+  transition:color .4s cubic-bezier(.25,.46,.45,.94);
+}
+.mode-btn:hover{color:rgba(60,45,100,.6)}
+.mode-btn.active{color:rgba(60,45,110,.8);font-weight:600}
+input.edit{
+  width:100%;padding:.66rem 1rem;border-radius:13px;
+  border:1px solid rgba(255,255,255,.5);
+  background:rgba(255,255,255,.2);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  color:rgba(40,30,75,.7);margin-top:1rem;font-size:.86rem;
+  font-family:'DM Sans',inherit;outline:none;cursor:text;
+  transition:all .22s ease;
+}
+input.edit::placeholder{color:rgba(60,45,100,.28)}
+input.edit:focus{
+  border-color:rgba(255,255,255,.75);
+  background:rgba(255,255,255,.35);
+  box-shadow:0 0 0 3px rgba(160,140,220,.12);
+}
+.actions{display:flex;gap:.6rem;align-items:center;margin-top:1rem;flex-wrap:wrap}
+.code-badge{
+  margin-left:auto;font-size:.71rem;
+  background:rgba(255,255,255,.28);
+  border:1px solid rgba(255,255,255,.55);
+  backdrop-filter:blur(8px);
+  color:rgba(80,60,140,.5);
+  padding:.22rem .7rem;border-radius:999px;font-weight:600;display:none;
+}
+.btn-wa{
+  background:linear-gradient(135deg,rgba(37,182,120,.82) 0%,rgba(18,140,90,.76) 100%);
+  color:rgba(255,255,255,.95);
+  backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:0 2px 12px rgba(18,140,90,.3),0 1px 0 rgba(255,255,255,.15) inset;
+  display:none;
+}
+.btn-wa:hover{
+  background:linear-gradient(135deg,rgba(37,182,120,.95) 0%,rgba(18,140,90,.9) 100%);
+  box-shadow:0 4px 18px rgba(18,140,90,.4),0 1px 0 rgba(255,255,255,.15) inset;
+  transform:translateY(-1px);
+}
+
+/* ── WA MODAL OVERLAY ── */
+#waModal{
+  position:fixed;inset:0;z-index:1000;
+  display:none;align-items:center;justify-content:center;
+  background:rgba(20,15,40,.45);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  animation:modalIn .22s cubic-bezier(.22,1,.36,1);
+}
+#waModal.show{display:flex}
+@keyframes modalIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+
+.wa-modal-box{
+  width:min(480px,92vw);
+  border-radius:28px;
+  overflow:hidden;
+  background:rgba(255,255,255,.22);
+  backdrop-filter:blur(60px) saturate(2) brightness(1.08);
+  -webkit-backdrop-filter:blur(60px) saturate(2) brightness(1.08);
+  border-top:1px solid rgba(255,255,255,.85);
+  border-left:1px solid rgba(255,255,255,.7);
+  border-right:1px solid rgba(255,255,255,.4);
+  border-bottom:1px solid rgba(255,255,255,.3);
+  box-shadow:0 32px 80px rgba(80,60,140,.18),0 8px 20px rgba(80,60,140,.1);
+  animation:slideUp .3s cubic-bezier(.22,1,.36,1);
+}
+@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+
+.wa-modal-header{
+  padding:1.2rem 1.6rem;
+  border-bottom:1px solid rgba(120,100,180,.08);
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(255,255,255,.1);
+}
+.wa-modal-title{
+  font-weight:700;font-size:.95rem;color:rgba(40,30,80,.7);
+  display:flex;align-items:center;gap:.5rem;
+}
+.wa-modal-close{
+  width:28px;height:28px;border-radius:50%;background:rgba(100,80,160,.08);
+  border:1px solid rgba(255,255,255,.5);color:rgba(80,60,140,.5);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.9rem;cursor:pointer;transition:all .2s;
+  padding:0;
+}
+.wa-modal-close:hover{background:rgba(200,60,60,.12);color:rgba(180,50,50,.7);}
+.wa-modal-body{padding:1.4rem 1.6rem}
+
+/* Steps indicator */
+.wa-steps{
+  display:flex;align-items:center;gap:.4rem;margin-bottom:1.4rem;
+}
+.wa-step{
+  display:flex;align-items:center;gap:.35rem;
+  font-size:.72rem;font-weight:600;color:rgba(80,60,140,.3);
+  transition:color .3s;
+}
+.wa-step.active{color:rgba(80,60,140,.75)}
+.wa-step.done{color:rgba(37,182,120,.7)}
+.wa-step-num{
+  width:20px;height:20px;border-radius:50%;
+  background:rgba(100,80,160,.08);border:1px solid rgba(120,100,180,.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:.65rem;font-weight:700;transition:all .3s;
+}
+.wa-step.active .wa-step-num{background:rgba(80,60,140,.15);border-color:rgba(80,60,140,.3);color:rgba(60,40,110,.8)}
+.wa-step.done .wa-step-num{background:rgba(37,182,120,.15);border-color:rgba(37,182,120,.3);color:rgba(20,140,80,.8)}
+.wa-step-sep{flex:1;height:1px;background:rgba(120,100,180,.1)}
+
+/* WA Account cards */
+.wa-accounts{display:flex;flex-direction:column;gap:.6rem}
+.wa-account-card{
+  padding:.85rem 1.1rem;border-radius:14px;
+  background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);
+  display:flex;align-items:center;gap:.85rem;
+  cursor:pointer;transition:all .22s cubic-bezier(.22,1,.36,1);
+}
+.wa-account-card:hover{background:rgba(255,255,255,.32);transform:translateX(3px)}
+.wa-account-card.selected{
+  background:rgba(37,182,120,.1);
+  border-color:rgba(37,182,120,.3);
+  box-shadow:0 0 0 2px rgba(37,182,120,.15);
+}
+.wa-account-icon{
+  width:38px;height:38px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(37,182,120,.18),rgba(18,140,90,.12));
+  border:1px solid rgba(37,182,120,.2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;flex-shrink:0;
+}
+.wa-account-info{flex:1;min-width:0}
+.wa-account-label{font-weight:600;font-size:.82rem;color:rgba(40,30,80,.7)}
+.wa-account-sub{font-size:.71rem;color:rgba(80,60,140,.4);margin-top:.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wa-status-dot{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+}
+.wa-status-dot.ready{background:#25b678;box-shadow:0 0 6px rgba(37,182,120,.5)}
+.wa-status-dot.qr{background:#f0a020;box-shadow:0 0 6px rgba(240,160,32,.5)}
+.wa-status-dot.loading{background:#a0a0c0;animation:blink 1.4s infinite}
+.wa-status-dot.disconnected{background:#d05050}
+
+/* QR view */
+.wa-qr-wrap{
+  text-align:center;padding:.5rem 0 .8rem;
+}
+.wa-qr-img{
+  width:200px;height:200px;border-radius:16px;
+  border:2px solid rgba(255,255,255,.6);
+  box-shadow:0 4px 20px rgba(80,60,140,.1);
+  background:white;
+}
+.wa-qr-hint{font-size:.75rem;color:rgba(80,60,140,.4);margin-top:.75rem;line-height:1.5}
+.wa-qr-checking{
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  font-size:.76rem;color:rgba(80,60,140,.4);margin-top:.7rem;font-weight:500;
+}
+.wa-spinner{
+  width:14px;height:14px;border:2px solid rgba(80,60,140,.12);
+  border-top-color:rgba(80,60,140,.5);border-radius:50%;
+  animation:spin .8s linear infinite;flex-shrink:0;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Groups list */
+.wa-groups-search{
+  width:100%;padding:.55rem .9rem;border-radius:11px;
+  border:1px solid rgba(255,255,255,.5);
+  background:rgba(255,255,255,.2);
+  backdrop-filter:blur(12px);color:rgba(40,30,75,.7);
+  font-size:.82rem;font-family:'DM Sans',inherit;outline:none;
+  margin-bottom:.75rem;
+}
+.wa-groups-search:focus{border-color:rgba(255,255,255,.75);background:rgba(255,255,255,.32)}
+.wa-groups-list{
+  max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem;
+  scrollbar-width:thin;scrollbar-color:rgba(120,100,180,.15) transparent;
+}
+.wa-groups-list::-webkit-scrollbar{width:4px}
+.wa-groups-list::-webkit-scrollbar-thumb{background:rgba(120,100,180,.15);border-radius:99px}
+.wa-group-item{
+  padding:.65rem .9rem;border-radius:11px;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);
+  cursor:pointer;transition:all .18s cubic-bezier(.22,1,.36,1);
+  display:flex;align-items:center;gap:.6rem;
+}
+.wa-group-item:hover{background:rgba(255,255,255,.3);transform:translateX(2px)}
+.wa-group-item.selected{
+  background:rgba(37,182,120,.1);border-color:rgba(37,182,120,.3);
+}
+.wa-group-name{font-size:.8rem;font-weight:600;color:rgba(40,30,80,.7);flex:1}
+.wa-group-count{font-size:.68rem;color:rgba(80,60,140,.35)}
+
+/* Preview pesan */
+.wa-preview-box{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.5);
+  border-radius:14px;padding:.9rem 1rem;max-height:150px;overflow-y:auto;
+  font-family:'JetBrains Mono',monospace;font-size:.75rem;
+  color:rgba(40,30,75,.65);line-height:1.8;
+  scrollbar-width:thin;scrollbar-color:rgba(120,100,180,.15) transparent;
+}
+.wa-preview-box::-webkit-scrollbar{width:4px}
+.wa-preview-box::-webkit-scrollbar-thumb{background:rgba(120,100,180,.15);border-radius:99px}
+
+/* Editable message list */
+.wa-msg-list{
+  max-height:185px;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem;
+  margin-bottom:.6rem;
+  scrollbar-width:thin;scrollbar-color:rgba(120,100,180,.15) transparent;
+}
+.wa-msg-list::-webkit-scrollbar{width:4px}
+.wa-msg-list::-webkit-scrollbar-thumb{background:rgba(120,100,180,.15);border-radius:99px}
+.wa-msg-item{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.45rem .7rem;border-radius:10px;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);
+  animation:fadeUp .15s ease;
+}
+.wa-msg-item input{
+  flex:1;background:transparent;border:none;outline:none;
+  font-family:'JetBrains Mono',monospace;font-size:.76rem;
+  color:rgba(40,30,75,.7);padding:0;min-width:0;
+}
+.wa-msg-del{
+  width:20px;height:20px;border-radius:6px;flex-shrink:0;
+  background:rgba(200,60,60,.08);border:1px solid rgba(200,60,60,.15);
+  color:rgba(180,50,50,.55);font-size:.72rem;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}
+.wa-msg-del:hover{background:rgba(200,60,60,.18);color:rgba(180,50,50,.8)}
+.wa-msg-add-row{
+  display:flex;gap:.5rem;margin-bottom:.7rem;
+}
+.wa-msg-add-input{
+  flex:1;padding:.45rem .8rem;border-radius:10px;
+  border:1px solid rgba(255,255,255,.5);
+  background:rgba(255,255,255,.18);
+  font-family:'JetBrains Mono',monospace;font-size:.76rem;
+  color:rgba(40,30,75,.7);outline:none;
+}
+.wa-msg-add-input:focus{border-color:rgba(37,182,120,.35);background:rgba(255,255,255,.28)}
+.wa-msg-add-input::placeholder{color:rgba(80,60,140,.3)}
+.wa-preview-info{
+  font-size:.73rem;color:rgba(80,60,140,.4);margin-bottom:.6rem;
+}
+.wa-delay-row{
+  display:flex;align-items:center;gap:.7rem;margin-top:.9rem;
+  font-size:.76rem;color:rgba(80,60,140,.45);
+}
+.wa-delay-row input[type=range]{flex:1;accent-color:rgba(37,182,120,.8)}
+
+/* Progress kirim */
+.wa-progress-wrap{text-align:center;padding:.5rem 0}
+.wa-progress-bar-outer{
+  height:6px;border-radius:99px;background:rgba(100,80,160,.1);overflow:hidden;
+  margin:1rem 0;
+}
+.wa-progress-bar-inner{
+  height:100%;border-radius:99px;
+  background:linear-gradient(90deg,#25b678,#18c86a);
+  transition:width .4s cubic-bezier(.22,1,.36,1);
+}
+.wa-progress-text{
+  font-size:.8rem;color:rgba(60,45,110,.55);margin-bottom:.4rem;font-weight:600;
+}
+.wa-progress-log{
+  max-height:120px;overflow-y:auto;text-align:left;
+  background:rgba(255,255,255,.12);border-radius:10px;padding:.7rem .9rem;
+  font-family:'JetBrains Mono',monospace;font-size:.72rem;
+  color:rgba(40,30,75,.55);line-height:1.8;
+  scrollbar-width:thin;scrollbar-color:rgba(120,100,180,.15) transparent;
+}
+.wa-progress-log::-webkit-scrollbar{width:4px}
+.wa-progress-log::-webkit-scrollbar-thumb{background:rgba(120,100,180,.15);border-radius:99px}
+.log-sent{color:rgba(30,140,80,.7)}
+.log-err{color:rgba(180,50,50,.7)}
+
+/* Done state */
+.wa-done{text-align:center;padding:1rem 0}
+.wa-done-icon{font-size:2.8rem;margin-bottom:.6rem}
+.wa-done-title{font-weight:700;font-size:1rem;color:rgba(30,130,70,.8);margin-bottom:.3rem}
+.wa-done-sub{font-size:.78rem;color:rgba(80,60,140,.4)}
+
+/* Modal footer buttons */
+.wa-modal-footer{
+  padding:1rem 1.6rem;border-top:1px solid rgba(120,100,180,.07);
+  display:flex;justify-content:flex-end;gap:.6rem;
+  background:rgba(255,255,255,.06);
+}
+.btn-ghost{
+  background:rgba(100,80,160,.06);
+  border:1px solid rgba(120,100,180,.15);
+  color:rgba(80,60,140,.55);
+}
+.btn-ghost:hover{background:rgba(100,80,160,.12);}
+.btn-green{
+  background:linear-gradient(135deg,rgba(37,182,120,.85),rgba(18,140,90,.8));
+  color:rgba(255,255,255,.95);
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:0 2px 12px rgba(18,140,90,.25);
+}
+.btn-green:hover{
+  background:linear-gradient(135deg,rgba(37,182,120,.96),rgba(18,140,90,.92));
+  box-shadow:0 4px 18px rgba(18,140,90,.35);transform:translateY(-1px);
+}
+
+@media(max-width:860px){.main-grid{grid-template-columns:1fr}}
+/* ── FOOTER ── */
+.pixel-footer{
+  position:fixed;bottom:0;left:0;width:100%;height:164px;
+  z-index:20;overflow:hidden;
+  border-top:1px solid rgba(255,255,255,.55);
+}
+.pixel-footer canvas{
+  display:block;width:100%;height:100%;
+  image-rendering:pixelated;image-rendering:crisp-edges;
+}
+.scene-badge{
+  position:absolute;bottom:10px;right:14px;
+  font-size:.62rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:rgba(255,255,255,.72);
+  background:rgba(60,40,100,.22);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:.2rem .6rem;border-radius:999px;
+  border:1px solid rgba(255,255,255,.22);
+  pointer-events:none;
+  font-family:'DM Sans',sans-serif;
+}
+</style>
+</head>
+<body>
+
+<div class="wallpaper"></div>
+<div class="blob b1"></div><div class="blob b2"></div>
+<div class="blob b3"></div><div class="blob b4"></div>
+
+<div class="container">
+  <div class="header">
+    <div class="pill"><span class="pill-dot"></span>AI Powered</div>
+    <h1>OCR Explorer</h1>
+    <p class="subtitle">Mode Biasa &amp; Mode Edit — Kode Job 2 huruf + 2–5 angka terdeteksi otomatis</p>
+  </div>
+
+  <div class="main-grid">
+    <div class="panel glass">
+      <div class="panel-header">📷&nbsp; Upload Screenshot</div>
+      <div class="panel-body">
+        <div class="upload" id="uploadArea">
+          <div class="upload-icon">🖼️</div>
+          <div class="upload-title">Klik, Drag, atau Ctrl+V</div>
+          <div class="upload-hint">Paste screenshot langsung dari clipboard</div>
+          <input type="file" id="fileInput" accept="image/*">
+        </div>
+        <img id="previewImg" alt="Preview" />
+        <div class="loading-wrap" id="loadingWrap">
+          <div class="loading-bar"><div class="loading-fill"></div></div>
+          <div class="loading-label" id="loadingLabel">Membaca teks...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="panel-header">
+        <span>✦&nbsp; Hasil</span>
+        <div class="mode-group" id="modeGroup">
+          <button class="mode-btn active" id="modeNormal">Biasa</button>
+          <button class="mode-btn" id="modeEdit">Edit</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="result" id="output">Belum ada hasil</div>
+        <input class="edit" id="suffixInput" placeholder="Tambahkan teks (contoh: 3 JAYA)" style="display:none">
+        <div class="actions">
+          <button class="btn-primary" onclick="copyText()">Salin Teks</button>
+          <button class="btn-wa btn-primary" id="btnKirimWA" onclick="openWAModal()">📲 Kirim ke WA</button>
+          <span class="code-badge" id="codeBadge"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     WA SENDER MODAL
+═══════════════════════════════════════ -->
+<div id="waModal">
+  <div class="wa-modal-box glass">
+    <div class="wa-modal-header">
+      <div class="wa-modal-title">
+        <span>📲</span>
+        <span id="waModalTitle">Kirim ke WhatsApp</span>
+      </div>
+      <button class="wa-modal-close" onclick="closeWAModal()">✕</button>
+    </div>
+    <div class="wa-modal-body">
+      <!-- Steps indicator -->
+      <div class="wa-steps">
+        <div class="wa-step active" id="step1Ind">
+          <div class="wa-step-num">1</div>
+          <span>Pilih WA</span>
+        </div>
+        <div class="wa-step-sep"></div>
+        <div class="wa-step" id="step2Ind">
+          <div class="wa-step-num">2</div>
+          <span>Pilih Grup</span>
+        </div>
+        <div class="wa-step-sep"></div>
+        <div class="wa-step" id="step3Ind">
+          <div class="wa-step-num">3</div>
+          <span>Kirim</span>
+        </div>
+      </div>
+
+      <!-- STEP 1: Pilih WA -->
+      <div id="waStep1">
+        <div style="font-size:.76rem;color:rgba(80,60,140,.4);margin-bottom:.8rem">
+          Pilih akun WhatsApp yang akan digunakan untuk mengirim pesan:
+        </div>
+        <div class="wa-accounts" id="waAccountsList">
+          <!-- diisi JS -->
+        </div>
+      </div>
+
+      <!-- STEP 2a: QR Code -->
+      <div id="waStepQR" style="display:none">
+        <div class="wa-qr-wrap">
+          <div style="position:relative;display:inline-block">
+            <img id="waQRImg" class="wa-qr-img" src="" alt="QR Code">
+            <div id="waQRExpired" style="display:none;position:absolute;inset:0;border-radius:16px;
+              background:rgba(30,20,60,.75);backdrop-filter:blur(4px);
+              display:none;align-items:center;justify-content:center;flex-direction:column;gap:.5rem">
+              <span style="font-size:1.4rem">🔄</span>
+              <span style="font-size:.72rem;color:rgba(255,255,255,.85);font-weight:600">QR Expired</span>
+            </div>
+          </div>
+          <div class="wa-qr-hint">
+            Buka WhatsApp di HP → Setelan → Perangkat Tertaut<br>
+            → Tautkan Perangkat → Scan QR di atas
+          </div>
+          <div class="wa-qr-checking">
+            <div class="wa-spinner"></div>
+            <span id="waQRStatus">Menunggu scan QR...</span>
+            <span id="waQRCountdown" style="margin-left:.3rem;font-weight:600;color:rgba(80,60,140,.55)"></span>
+          </div>
+          <button id="btnRefreshQR" onclick="manualRefreshQR()" class="btn-ghost btn-primary"
+            style="margin-top:.7rem;font-size:.74rem;padding:.35rem .85rem">
+            🔄 Refresh QR
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 2b: Pilih Grup -->
+      <div id="waStep2" style="display:none">
+        <div style="font-size:.76rem;color:rgba(80,60,140,.4);margin-bottom:.75rem">
+          Pilih grup tujuan pengiriman:
+        </div>
+        <input class="wa-groups-search" id="groupSearch" placeholder="Cari nama grup..." oninput="filterGroups()">
+        <div class="wa-groups-list" id="groupsList">
+          <!-- diisi JS -->
+        </div>
+      </div>
+
+      <!-- STEP 3: Preview & Kirim -->
+      <!-- STEP 3: Edit & Kirim -->
+      <div id="waStep3" style="display:none">
+        <div class="wa-preview-info">
+          Kirim ke grup <strong id="previewGroup">-</strong> &nbsp;·&nbsp;
+          <strong id="previewCount">0</strong> pesan
+        </div>
+        <!-- Editable message list -->
+        <div class="wa-msg-list" id="waMsgList"></div>
+        <!-- Add message input -->
+        <div class="wa-msg-add-row">
+          <input class="wa-msg-add-input" id="waMsgAddInput" placeholder="Tambah pesan manual...">
+          <button class="btn-green btn-primary" style="padding:.4rem .8rem;font-size:.78rem" onclick="waMsgAddManual()">+ Tambah</button>
+        </div>
+        <div class="wa-delay-row">
+          <span>Delay antar pesan:</span>
+          <input type="range" id="delaySlider" min="500" max="3000" step="100" value="800"
+                 oninput="document.getElementById('delayVal').textContent=this.value+'ms'">
+          <span id="delayVal">800ms</span>
+        </div>
+      </div>
+
+      <!-- STEP 4: Proses Kirim -->
+      <div id="waStepProgress" style="display:none">
+        <div class="wa-progress-wrap">
+          <div class="wa-progress-text" id="progressText">Mengirim...</div>
+          <div class="wa-progress-bar-outer">
+            <div class="wa-progress-bar-inner" id="progressBar" style="width:0%"></div>
+          </div>
+          <div class="wa-progress-log" id="progressLog"></div>
+        </div>
+      </div>
+
+      <!-- STEP 5: Done -->
+      <div id="waStepDone" style="display:none">
+        <div class="wa-done">
+          <div class="wa-done-icon">✅</div>
+          <div class="wa-done-title" id="doneTitle">Semua pesan terkirim!</div>
+          <div class="wa-done-sub" id="doneSub"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="wa-modal-footer" id="waModalFooter">
+      <button class="btn-ghost btn-primary" onclick="closeWAModal()">Batal</button>
+      <button class="btn-green btn-primary" id="waBtnNext" onclick="waNextStep()" disabled>
+        Pilih WA dulu →
+      </button>
+    </div>
+  </div>
+</div>
+
+<footer class="pixel-footer">
+  <canvas id="fc"></canvas>
+  <div class="scene-badge" id="sceneBadge">musim semi</div>
+</footer>
+
+<canvas id="canvas" style="display:none"></canvas>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+/* ── PANEL TILT ── */
+document.querySelectorAll('.panel').forEach(panel=>{
+  panel.addEventListener('mousemove',e=>{
+    const r=panel.getBoundingClientRect();
+    const x=(e.clientX-r.left)/r.width-.5;
+    const y=(e.clientY-r.top)/r.height-.5;
+    panel.style.transform=`perspective(1000px) rotateY(${x*5}deg) rotateX(${-y*4}deg) translateY(-3px) scale(1.006)`;
+  });
+  panel.addEventListener('mouseleave',()=>{panel.style.transform='';});
+});
+
+/* ── OCR CORE ── */
+(function(){
+  const uploadArea=document.getElementById('uploadArea');
+  const fileInput=document.getElementById('fileInput');
+  const output=document.getElementById('output');
+  const suffixInput=document.getElementById('suffixInput');
+  const modeNormal=document.getElementById('modeNormal');
+  const modeEdit=document.getElementById('modeEdit');
+  const modeGroup=document.getElementById('modeGroup');
+  const canvas=document.getElementById('canvas');
+  const ctx=canvas.getContext('2d');
+  const previewImg=document.getElementById('previewImg');
+  const loadingWrap=document.getElementById('loadingWrap');
+  const loadingLbl=document.getElementById('loadingLabel');
+  const codeBadge=document.getElementById('codeBadge');
+  let originalText='', editCodes=[], currentMode='normal';
+
+  uploadArea.onclick=()=>fileInput.click();
+  fileInput.onchange=e=>e.target.files[0]&&handleFile(e.target.files[0]);
+  document.addEventListener('paste',e=>{
+    for(const item of e.clipboardData.items)
+      if(item.type.startsWith('image/')){handleFile(item.getAsFile());break;}
+  });
+  uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('drag-over')});
+  uploadArea.addEventListener('dragleave',()=>uploadArea.classList.remove('drag-over'));
+  uploadArea.addEventListener('drop',e=>{
+    e.preventDefault();uploadArea.classList.remove('drag-over');
+    const f=e.dataTransfer.files[0];
+    if(f&&f.type.startsWith('image/'))handleFile(f);
+  });
+
+  function showPreview(file){
+    const url=URL.createObjectURL(file);
+    previewImg.onload=()=>URL.revokeObjectURL(url);
+    previewImg.src=url; previewImg.style.display='block';
+  }
+  function setLoading(on,msg=''){
+    loadingWrap.className='loading-wrap'+(on?' active':'');
+    loadingLbl.textContent=msg;
+  }
+  async function handleFile(file){
+    showPreview(file); setLoading(true,'⚙️ Memproses gambar...');
+    output.textContent=''; codeBadge.style.display='none';
+    const reader=new FileReader();
+    reader.onload=async e=>{
+      const img=new Image();
+      img.onload=async()=>{
+        const scale=2;
+        canvas.width=img.width*scale; canvas.height=img.height*scale;
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        const d=ctx.getImageData(0,0,canvas.width,canvas.height);
+        for(let i=0;i<d.data.length;i+=4){
+          let g=d.data[i]*.299+d.data[i+1]*.587+d.data[i+2]*.114;
+          g=(g-128)*1.4+128; g=Math.min(235,Math.max(80,g));
+          d.data[i]=d.data[i+1]=d.data[i+2]=g;
+        }
+        ctx.putImageData(d,0,0);
+        setLoading(true,'🔍 Membaca teks...');
+        try{
+          const worker=await Tesseract.createWorker(['eng','ind'],1);
+          await worker.setParameters({
+            tessedit_pageseg_mode:Tesseract.PSM.SPARSE_TEXT,
+            preserve_interword_spaces:'1'
+          });
+          const{data:{text}}=await worker.recognize(canvas);
+          await worker.terminate();
+          originalText=text.replace(/\r/g,'').replace(/\n\s*\n+/g,'\n')
+            .split('\n').map(l=>l.trim()).filter(l=>l).join('\n');
+          prepareEditCodes(); setLoading(false);
+          currentMode==='normal'?(output.textContent=originalText):renderEdit();
+        }catch(err){setLoading(false);output.textContent='Error: '+err.message;}
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function prepareEditCodes(){
+    editCodes=[];
+    // Deteksi kode job: 2 huruf (besar/kecil) + spasi + 2-6 angka, lalu di-uppercase
+    const regex=/\b([A-Za-z]{2})\s+(\d{2,6})\b/g;
+    originalText.split('\n').forEach(line=>{
+      let m; regex.lastIndex=0;
+      while((m=regex.exec(line))!==null){
+        editCodes.push(`${m[1].toUpperCase()} ${m[2]}`);
+      }
+    });
+    if(editCodes.length){
+      codeBadge.textContent=editCodes.length+' kode';
+      codeBadge.style.display='inline-block';
+    }
+  }
+  modeNormal.onclick=()=>{
+    currentMode='normal';
+    modeNormal.classList.add('active'); modeEdit.classList.remove('active');
+    modeGroup.classList.remove('edit-mode');
+    suffixInput.style.display='none';
+    output.textContent=originalText||'Belum ada hasil';
+  };
+  modeEdit.onclick=()=>{
+    currentMode='edit';
+    modeEdit.classList.add('active'); modeNormal.classList.remove('active');
+    modeGroup.classList.add('edit-mode');
+    suffixInput.style.display='block';
+    renderEdit();
+  };
+  suffixInput.oninput=renderEdit;
+  function renderEdit(){
+    const s=suffixInput.value.trim();
+    output.textContent=editCodes.length
+      ?editCodes.map(c=>s?`${c} ${s}`:c).join('\n')
+      :'Belum ada kode job terdeteksi.';
+  }
+  window.copyText=function(){
+    navigator.clipboard.writeText(output.textContent).then(()=>{
+      const btn=document.querySelector('.btn-primary');
+      btn.textContent='✓ Tersalin!';
+      setTimeout(()=>btn.textContent='Salin Teks',1600);
+    });
+  };
+})();
+
+/* ═══════════════════════════════════════════════
+   WA SENDER MODULE
+════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  const API = 'http://localhost:3000/api';
+  const modal = document.getElementById('waModal');
+  const btnKirimWA = document.getElementById('btnKirimWA');
+
+  // State
+  let waStatuses = {};
+  let selectedWA = null;
+  let selectedGroup = null;
+  let allGroups = [];
+  let qrPollTimer = null;
+  let currentStep = 1; // 1 | 2 | 3 | 4 | 5
+  let messagesToSend = [];
+
+  // ── Expose ke global ──
+  window.openWAModal = openWAModal;
+  window.closeWAModal = closeWAModal;
+  window.waNextStep = waNextStep;
+  // window.filterGroups di-set langsung di definisi fungsinya di bawah
+
+  // ── Tampilkan tombol kirim WA saat ada kode ──
+  const observer = new MutationObserver(() => {
+    const badge = document.getElementById('codeBadge');
+    btnKirimWA.style.display = badge.style.display === 'inline-block' ? 'inline-flex' : 'none';
+  });
+  observer.observe(document.getElementById('codeBadge'), { attributes: true, attributeFilter: ['style'] });
+
+  // ── Buka Modal ──
+  async function openWAModal() {
+    // Kumpulkan pesan dari output aktif
+    const output = document.getElementById('output');
+    messagesToSend = output.textContent.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    if (!messagesToSend.length) { alert('Tidak ada pesan untuk dikirim.'); return; }
+
+    resetModal();
+    modal.classList.add('show');
+    await loadWAStatuses();
+  }
+
+  function closeWAModal() {
+    modal.classList.remove('show');
+    stopQRPoll();
+    setTimeout(resetModal, 300);
+  }
+
+  function resetModal() {
+    currentStep = 1;
+    selectedWA = null;
+    selectedGroup = null;
+    allGroups = [];
+    showStep(1);
+    document.getElementById('waModalTitle').textContent = 'Kirim ke WhatsApp';
+    setNextBtn('Pilih WA dulu →', true);
+    updateStepIndicators(1);
+  }
+
+  // ── Load status semua WA ──
+  async function loadWAStatuses() {
+    document.getElementById('waAccountsList').innerHTML =
+      '<div style="text-align:center;padding:1rem;font-size:.78rem;color:rgba(80,60,140,.4)"><div class="wa-spinner" style="margin:0 auto .5rem"></div>Mengecek status WA...</div>';
+    try {
+      const res = await fetch(`${API}/wa/all-status`);
+      waStatuses = await res.json();
+      renderWAAccounts();
+    } catch(e) {
+      document.getElementById('waAccountsList').innerHTML =
+        `<div style="text-align:center;padding:1rem;font-size:.78rem;color:rgba(180,50,50,.6)">
+          ⚠️ Server tidak terhubung.<br>
+          <span style="font-size:.7rem;color:rgba(80,60,140,.35)">Pastikan server.js sudah berjalan:<br><code>node server.js</code></span>
+        </div>`;
+    }
+  }
+
+  function renderWAAccounts() {
+    const list = document.getElementById('waAccountsList');
+    list.innerHTML = '';
+    for (let i = 1; i <= 3; i++) {
+      const s = waStatuses[i] || { status: 'loading', label: `WhatsApp ${i}` };
+      const statusLabel = {
+        ready: '✓ Terhubung',
+        qr: '⟳ Perlu scan QR',
+        loading: '... Memuat',
+        disconnected: '✗ Terputus',
+      }[s.status] || s.status;
+
+      const card = document.createElement('div');
+      card.className = 'wa-account-card';
+      card.dataset.id = i;
+      card.innerHTML = `
+        <div class="wa-account-icon">📱</div>
+        <div class="wa-account-info">
+          <div class="wa-account-label">${s.label}</div>
+          <div class="wa-account-sub">${s.pushname ? `${s.pushname} · +${s.phoneNumber}` : statusLabel}</div>
+        </div>
+        <div class="wa-status-dot ${s.status}"></div>
+      `;
+      card.onclick = () => selectWA(i, card);
+      list.appendChild(card);
+    }
+  }
+
+  function selectWA(id, card) {
+    document.querySelectorAll('.wa-account-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedWA = id;
+
+    const s = waStatuses[id];
+    if (s?.status === 'ready') {
+      setNextBtn('Pilih Grup →', false);
+    } else if (s?.status === 'qr') {
+      setNextBtn('Scan QR →', false);
+    } else if (s?.status === 'loading') {
+      setNextBtn('Sedang memuat...', true);
+    } else {
+      setNextBtn('WA tidak tersedia', true);
+    }
+  }
+
+  // ── Next Step logic ──
+  async function waNextStep() {
+    if (currentStep === 1) {
+      // Dari WA selection
+      const s = waStatuses[selectedWA];
+      if (s?.status === 'qr' || s?.status === 'loading') {
+        // Tampilkan QR
+        await showQRStep();
+      } else if (s?.status === 'ready') {
+        await showGroupStep();
+      }
+    } else if (currentStep === 2) {
+      // Dari pilih grup → preview
+      if (!selectedGroup) { alert('Pilih grup dulu!'); return; }
+      showPreviewStep();
+    } else if (currentStep === 3) {
+      // Dari preview → kirim
+      await startSending();
+    } else if (currentStep === 5) {
+      // Done → tutup
+      closeWAModal();
+    }
+  }
+
+  // ── STEP QR ──
+  let qrCountdownTimer = null;
+  let qrPollActive = false;
+
+  window.manualRefreshQR = async function() {
+    document.getElementById('waQRStatus').textContent = '⟳ Meminta QR baru...';
+    // Minta server regenerate QR dengan restart client sebentar
+    try {
+      const res = await fetch(`${API}/wa/${selectedWA}/qr`);
+      const data = await res.json();
+      if (data.qr) {
+        setQRImage(data.qr);
+      } else {
+        document.getElementById('waQRStatus').textContent = 'Menunggu QR dari server...';
+      }
+    } catch(e) {}
+  };
+
+  function setQRImage(dataUrl) {
+    document.getElementById('waQRImg').src = dataUrl;
+    document.getElementById('waQRExpired').style.display = 'none';
+    startQRCountdown();
+  }
+
+  async function showQRStep() {
+    currentStep = 1.5;
+    qrPollActive = true;
+    showStep('qr');
+    setNextBtn('Menunggu scan...', true);
+    document.getElementById('waModalTitle').textContent = `Scan QR — WA ${selectedWA}`;
+    document.getElementById('waQRStatus').textContent = 'Memuat QR...';
+    document.getElementById('waQRCountdown').textContent = '';
+
+    // Ambil QR pertama
+    await manualRefreshQR();
+
+    // Poll gabungan: cek status + ambil QR baru
+    qrPollTimer = setInterval(async () => {
+      if (!qrPollActive) return;
+      try {
+        // 1. Cek status dulu
+        const sRes = await fetch(`${API}/wa/${selectedWA}/status`);
+        const sData = await sRes.json();
+        if (sData.status === 'ready') {
+          waStatuses[selectedWA] = sData;
+          stopQRPoll();
+          await showGroupStep();
+          return;
+        }
+        // 2. Ambil QR terbaru (server selalu simpan QR terbaru dari event 'qr')
+        const qRes = await fetch(`${API}/wa/${selectedWA}/qr`);
+        const qData = await qRes.json();
+        if (qData.qr) {
+          const currentSrc = document.getElementById('waQRImg').src;
+          // Bandingkan panjang saja (cukup untuk deteksi QR baru)
+          if (qData.qr.length !== currentSrc.length || currentSrc === '' || currentSrc === window.location.href) {
+            setQRImage(qData.qr);
+            document.getElementById('waQRStatus').textContent = '✓ QR baru — scan sekarang!';
+          }
+        }
+      } catch (e) { /* ignore network errors */ }
+    }, 3000);
+  }
+
+  function startQRCountdown() {
+    if (qrCountdownTimer) clearInterval(qrCountdownTimer);
+    let secs = 55; // WA QR valid ~60 detik
+    const el = document.getElementById('waQRCountdown');
+    const statusEl = document.getElementById('waQRStatus');
+    el.textContent = `(${secs}s)`;
+    statusEl.textContent = 'Scan QR sebelum expired';
+    qrCountdownTimer = setInterval(() => {
+      secs--;
+      if (secs > 0) {
+        el.textContent = `(${secs}s)`;
+        if (secs <= 10) statusEl.textContent = `⚠️ Segera scan! ${secs} detik lagi`;
+      } else {
+        clearInterval(qrCountdownTimer);
+        el.textContent = '';
+        statusEl.textContent = 'QR expired — menunggu QR baru...';
+        document.getElementById('waQRExpired').style.display = 'flex';
+      }
+    }, 1000);
+  }
+
+  function stopQRPoll() {
+    qrPollActive = false;
+    if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; }
+    if (qrCountdownTimer) { clearInterval(qrCountdownTimer); qrCountdownTimer = null; }
+  }
+
+  // ── STEP 2: Pilih Grup ──
+  async function showGroupStep() {
+    currentStep = 2;
+    showStep(2);
+    updateStepIndicators(2);
+    setNextBtn('Pilih grup dulu →', true);
+    document.getElementById('waModalTitle').textContent = 'Pilih Grup';
+    document.getElementById('groupsList').innerHTML =
+      '<div style="text-align:center;padding:.8rem;font-size:.78rem;color:rgba(80,60,140,.4)"><div class="wa-spinner" style="margin:0 auto .4rem"></div>Memuat grup...</div>';
+    document.getElementById('groupSearch').value = '';
+
+    try {
+      const res = await fetch(`${API}/wa/${selectedWA}/groups`);
+      const data = await res.json();
+      allGroups = data.groups || [];
+      renderGroupList(allGroups);
+    } catch (e) {
+      document.getElementById('groupsList').innerHTML =
+        `<div style="text-align:center;font-size:.78rem;color:rgba(180,50,50,.6);padding:.8rem">Gagal memuat grup: ${e.message}</div>`;
+    }
+  }
+
+  function renderGroupList(groups) {
+    const list = document.getElementById('groupsList');
+    list.innerHTML = '';
+    if (!groups.length) {
+      list.innerHTML = '<div style="text-align:center;font-size:.78rem;color:rgba(80,60,140,.35);padding:.8rem">Tidak ada grup ditemukan.</div>';
+      return;
+    }
+    groups.forEach(g => {
+      const item = document.createElement('div');
+      item.className = 'wa-group-item';
+      if (selectedGroup?.id === g.id) item.classList.add('selected');
+      item.innerHTML = `
+        <span style="font-size:1rem">👥</span>
+        <span class="wa-group-name">${escHtml(g.name)}</span>
+        <span class="wa-group-count">${g.participantCount} anggota</span>
+      `;
+      item.onclick = () => {
+        document.querySelectorAll('.wa-group-item').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        selectedGroup = g;
+        setNextBtn('Lanjut →', false);
+      };
+      list.appendChild(item);
+    });
+  }
+
+  window.filterGroups = function() {
+    const q = document.getElementById('groupSearch').value.toLowerCase();
+    const filtered = allGroups.filter(g => g.name.toLowerCase().includes(q));
+    renderGroupList(filtered);
+  };
+
+  // ── STEP 3: Preview ──
+  function updatePreviewCount() {
+    document.getElementById('previewCount').textContent = messagesToSend.length;
+    setNextBtn(messagesToSend.length > 0 ? `🚀 Kirim ${messagesToSend.length} Pesan` : 'Tidak ada pesan', messagesToSend.length === 0);
+  }
+
+  function renderMsgList() {
+    const list = document.getElementById('waMsgList');
+    list.innerHTML = '';
+    messagesToSend.forEach((msg, i) => {
+      const row = document.createElement('div');
+      row.className = 'wa-msg-item';
+      row.innerHTML = `
+        <span style="font-size:.65rem;color:rgba(80,60,140,.3);font-weight:600;min-width:18px">${i+1}</span>
+        <input type="text" value="${escHtml(msg)}" oninput="waMsgEdit(${i}, this.value)">
+        <button class="wa-msg-del" onclick="waMsgDelete(${i})" title="Hapus">✕</button>
+      `;
+      list.appendChild(row);
+    });
+    updatePreviewCount();
+  }
+
+  window.waMsgEdit = function(i, val) {
+    messagesToSend[i] = val;
+    updatePreviewCount();
+  };
+  window.waMsgDelete = function(i) {
+    messagesToSend.splice(i, 1);
+    renderMsgList();
+  };
+  window.waMsgAddManual = function() {
+    const inp = document.getElementById('waMsgAddInput');
+    const val = inp.value.trim();
+    if (!val) return;
+    messagesToSend.push(val);
+    inp.value = '';
+    renderMsgList();
+    // Scroll ke bawah list
+    const list = document.getElementById('waMsgList');
+    list.scrollTop = list.scrollHeight;
+  };
+
+  function showPreviewStep() {
+    currentStep = 3;
+    showStep(3);
+    updateStepIndicators(3);
+    document.getElementById('waModalTitle').textContent = 'Edit & Kirim';
+    document.getElementById('previewGroup').textContent = selectedGroup.name;
+    // Enter di input tambah pesan
+    const addInput = document.getElementById('waMsgAddInput');
+    addInput.onkeydown = e => { if (e.key === 'Enter') window.waMsgAddManual(); };
+    renderMsgList();
+  }
+
+  // ── STEP 4: Sending ──
+  async function startSending() {
+    currentStep = 4;
+    showStep('progress');
+    setNextBtn('Mengirim...', true);
+    document.getElementById('waModalTitle').textContent = 'Mengirim...';
+    // Sembunyikan footer saat kirim
+    document.getElementById('waModalFooter').style.display = 'none';
+
+    const delay = parseInt(document.getElementById('delaySlider').value) || 800;
+    const log = document.getElementById('progressLog');
+    const bar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
+    log.innerHTML = '';
+    bar.style.width = '0%';
+
+    const total = messagesToSend.length;
+
+    // Kirim satu per satu (client-side loop dengan API per pesan)
+    let sent = 0, errors = 0;
+    for (let i = 0; i < total; i++) {
+      const msg = messagesToSend[i];
+      progressText.textContent = `Mengirim ${i+1} / ${total}...`;
+      bar.style.width = `${Math.round(((i+1)/total)*100)}%`;
+
+      try {
+        const res = await fetch(`${API}/wa/${selectedWA}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupId: selectedGroup.id,
+            messages: [msg],
+            delay: 0,
+          }),
+        });
+        const data = await res.json();
+        if (data.sent > 0) {
+          sent++;
+          log.innerHTML += `<div class="log-sent">✓ [${i+1}] ${escHtml(msg)}</div>`;
+        } else {
+          errors++;
+          log.innerHTML += `<div class="log-err">✗ [${i+1}] ${escHtml(msg)} — gagal</div>`;
+        }
+      } catch (e) {
+        errors++;
+        log.innerHTML += `<div class="log-err">✗ [${i+1}] ${escHtml(msg)} — ${e.message}</div>`;
+      }
+
+      log.scrollTop = log.scrollHeight;
+
+      // Delay antar pesan
+      if (i < total - 1) {
+        await sleep(delay);
+      }
+    }
+
+    // Done
+    currentStep = 5;
+    showDone(sent, errors, total);
+  }
+
+  function showDone(sent, errors, total) {
+    showStep('done');
+    document.getElementById('waModalTitle').textContent = 'Selesai!';
+    document.getElementById('doneTitle').textContent =
+      errors === 0 ? '🎉 Semua pesan berhasil dikirim!' : `⚠️ ${sent} berhasil, ${errors} gagal`;
+    document.getElementById('doneSub').textContent =
+      `${sent} dari ${total} pesan dikirim ke "${selectedGroup?.name}"`;
+    document.getElementById('waModalFooter').style.display = 'flex';
+    setNextBtn('Tutup', false);
+    document.querySelector('#waModalFooter .btn-ghost').style.display = 'none';
+  }
+
+  // ── HELPERS ──
+  function showStep(step) {
+    document.getElementById('waStep1').style.display = step === 1 ? '' : 'none';
+    document.getElementById('waStepQR').style.display = step === 'qr' ? '' : 'none';
+    document.getElementById('waStep2').style.display = step === 2 ? '' : 'none';
+    document.getElementById('waStep3').style.display = step === 3 ? '' : 'none';
+    document.getElementById('waStepProgress').style.display = step === 'progress' ? '' : 'none';
+    document.getElementById('waStepDone').style.display = step === 'done' ? '' : 'none';
+  }
+
+  function updateStepIndicators(active) {
+    [1, 2, 3].forEach(n => {
+      const el = document.getElementById(`step${n}Ind`);
+      el.className = 'wa-step';
+      if (n < active) el.classList.add('done');
+      else if (n === active) el.classList.add('active');
+    });
+  }
+
+  function setNextBtn(text, disabled) {
+    const btn = document.getElementById('waBtnNext');
+    btn.textContent = text;
+    btn.disabled = disabled;
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // Register modal hover untuk cursor
+  modal.querySelectorAll('button,.wa-account-card,.wa-group-item').forEach(el => {
+    const cur = document.getElementById('cursor');
+    if (cur) {
+      el.addEventListener('mouseenter', () => cur.classList.add('hover'));
+      el.addEventListener('mouseleave', () => cur.classList.remove('hover'));
+    }
+  });
+
+  // Klik backdrop tutup modal
+  modal.addEventListener('click', e => { if (e.target === modal) closeWAModal(); });
+
+})();
+
+
+/* ═══════════════════════════════════════════════
+   PIXEL WORLD ENGINE + ORANGE KAWAII WALKING CAT
+════════════════════════════════════════════════ */
+(function(){
+'use strict';
+const CV=document.getElementById('fc');
+const X=CV.getContext('2d');
+const badge=document.getElementById('sceneBadge');
+X.imageSmoothingEnabled=false;
+
+let W=0,H=0;
+function resize(){
+  W=CV.width=CV.offsetWidth;
+  H=CV.height=CV.offsetHeight;
+}
+resize(); window.addEventListener('resize',resize);
+
+const P=3;      // pixel size (px per "pixel art pixel")
+const GND=52;   // ground strip height in canvas px
+const SPD=56;   // parallax scroll speed px/s
+
+// ── SEASONS (soft, muted) ──────────────────────────
+const SEASONS=[
+  { name:'musim semi',
+    sky0:'#d4e8f4',sky1:'#eaf4f8',
+    g0:'#7aaa68',g1:'#5a8e50',
+    tree:['#7aac68','#8ebc7a','#5e9452'],trunk:'#8a6040',
+    bld:['#d8d0e8','#c8c0dc','#e0d8f0'],win:'#f8e8b8',
+    deco:'flowers',dk:['#e8a8b8','#d4b8d8','#f0d898','#b8d4b0'],
+    sun:'#f8e898',hasSun:true,hasMoon:false,hasSnow:false },
+  { name:'musim panas',
+    sky0:'#b8d8ec',sky1:'#d4ecf8',
+    g0:'#6a9e54',g1:'#4e8040',
+    tree:['#5a9848','#70aa60','#488050'],trunk:'#7a5030',
+    bld:['#dcd0b0','#cec098','#e8dac0'],win:'#b8d8f0',
+    deco:'grass',dk:['#e89060','#f0b870','#d8c870'],
+    sun:'#f8d870',hasSun:true,hasMoon:false,hasSnow:false },
+  { name:'musim gugur',
+    sky0:'#d8c8a8',sky1:'#eadcc0',
+    g0:'#9a7848',g1:'#7a5e34',
+    tree:['#b87840','#c89050','#a06030'],trunk:'#6a4428',
+    bld:['#c0a888','#b09878','#d0b898'],win:'#f0c870',
+    deco:'leaves',dk:['#c07840','#d09850','#b86030'],
+    sun:'#e8c068',hasSun:true,hasMoon:false,hasSnow:false },
+  { name:'musim dingin',
+    sky0:'#c4d0e4',sky1:'#d8e4f0',
+    g0:'#d8e2ee',g1:'#c0cede',
+    tree:['#8898b4','#9aaac4','#788aa8'],trunk:'#7080a0',
+    bld:['#bcc8dc','#aab8cc','#ccd4e4'],win:'#f8e8c0',
+    deco:'snow',dk:['#c8d4e8','#d4dff0','#b8c8dc'],
+    sun:'#e8eaf8',hasSun:false,hasMoon:true,hasSnow:true },
+];
+
+const SD=15,FD=2.5;
+let T=0,scrl=0,si=0,sp=0;
+
+// ── Stable RNG ──
+const rnd=(s,i)=>{const x=Math.sin(s*127.1+i*311.7)*43758.5453;return x-Math.floor(x);};
+
+// ── Scene objects (stable, no recompute) ──
+// Buildings: bx relative to a tileable strip of width TW_B
+const TW_B=860;
+const BLDS=Array.from({length:16},(_,i)=>({
+  bx:i*(50+~~(rnd(1,i)*36)),
+  w:20+~~(rnd(2,i)*30),
+  h:26+~~(rnd(3,i)*52),
+  wi: Array.from({length:8},(_,j)=>rnd(4,i*8+j)>.45)
+}));
+
+// Trees far (tile width 720), trees near (tile width 480)
+const TW_TF=720, TW_TN=480;
+const TREES_F=Array.from({length:12},(_,i)=>({x:i*(58+~~(rnd(10,i)*30)),h:28+~~(rnd(11,i)*24)}));
+const TREES_N=Array.from({length:9}, (_,i)=>({x:i*(50+~~(rnd(12,i)*28)),h:18+~~(rnd(13,i)*16)}));
+
+// Deco (flowers/leaves/snow) tiling at 200px
+const DECO=Array.from({length:32},(_,i)=>({x:rnd(20,i)*190,sz:1+~~(rnd(21,i)*2)}));
+
+// Clouds
+const CLOUDS=Array.from({length:6},(_,i)=>({
+  x:rnd(30,i)*2600,y:6+rnd(31,i)*22,
+  w:24+rnd(32,i)*38,h:8+rnd(33,i)*12,
+  spd:.07+rnd(34,i)*.12,np:2+~~(rnd(35,i)*3)
+}));
+
+// Snow particles
+const SNOWP=Array.from({length:80},(_,i)=>({
+  x:rnd(40,i)*3000,y:rnd(41,i)*200,
+  v:14+rnd(42,i)*22,r:.5+rnd(43,i)*1.1,ph:rnd(44,i)*6.28
+}));
+
+// Stars (for winter night)
+const STARS=Array.from({length:55},(_,i)=>({
+  x:rnd(50,i)*2600,y:2+rnd(51,i)*60,
+  r:.4+rnd(52,i)*1.1,ph:rnd(53,i)*6.28
+}));
+
+// ── Draw helpers ──────────────────────────────────
+function tile(draw, tw, parallax){
+  const off=(scrl*parallax)%tw;
+  const reps=Math.ceil(W/tw)+2;
+  for(let r=-1;r<reps;r++) draw(r*tw-off);
+}
+
+function drawSky(s,a){
+  const gy=H-GND;
+  const g=X.createLinearGradient(0,0,0,gy);
+  g.addColorStop(0,s.sky0);g.addColorStop(1,s.sky1);
+  X.save();X.globalAlpha=a;X.fillStyle=g;X.fillRect(0,0,W,gy);X.restore();
+}
+
+function drawCelestial(s,a){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a;
+  if(s.hasSun){
+    const sx=~~(W*.82),sy=~~(gy*.19);
+    const sg=X.createRadialGradient(sx,sy,0,sx,sy,48);
+    sg.addColorStop(0,s.sun+'cc');sg.addColorStop(.5,s.sun+'44');sg.addColorStop(1,'transparent');
+    X.fillStyle=sg;X.fillRect(0,0,W,gy);
+    X.fillStyle=s.sun;X.beginPath();X.arc(sx,sy,9,0,6.28);X.fill();
+  }
+  if(s.hasMoon){
+    X.fillStyle='rgba(10,8,40,.34)';X.fillRect(0,0,W,gy);
+    STARS.forEach(st=>{
+      const tw2=.35+.65*Math.sin(T*1.9+st.ph);
+      X.globalAlpha=a*tw2*.7;X.fillStyle='#fff8e8';
+      X.beginPath();X.arc(((st.x%W)+W)%W,st.y,st.r,0,6.28);X.fill();
+    });
+    X.globalAlpha=a;
+    const mx=~~(W*.82),my=~~(gy*.2);
+    X.fillStyle='#f0f0e8';X.beginPath();X.arc(mx,my,10,0,6.28);X.fill();
+    X.fillStyle='rgba(10,8,40,.72)';X.beginPath();X.arc(mx-3,my-2,7,0,6.28);X.fill();
+  }
+  X.restore();
+}
+
+function drawClouds(s,a,dt){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a*.8;X.fillStyle=s.hasMoon?'rgba(200,210,230,.55)':'rgba(255,255,255,.82)';
+  CLOUDS.forEach(c=>{
+    c.x=(c.x - c.spd*SPD*dt + W*2.4)%(W*2.4);
+    const cx=~~c.x, cy=~~(c.y*(gy/52));
+    const pw=c.w/c.np;
+    for(let p=0;p<c.np;p++){
+      X.beginPath();X.ellipse(~~(cx+p*pw*.7),cy,~~(pw*.78),~~(c.h*.5+p%2*c.h*.12),0,0,6.28);X.fill();
+    }
+    X.beginPath();X.ellipse(~~(cx+c.w*.38),~~(cy+c.h*.1),~~(c.w*.6),~~(c.h*.38),0,0,6.28);X.fill();
+  });
+  X.restore();
+}
+
+// Buildings — all anchored to ground line (gy)
+function drawBuildingStrip(s,a,parallax,heightScale){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a;
+  tile(ox=>{
+    BLDS.forEach((b,bi)=>{
+      const bx=~~(ox+b.bx), bh=~~(b.h*heightScale);
+      const by=gy-bh; // bottom of building touches ground
+      if(bx+b.w<0||bx>W)return;
+      const col=s.bld[bi%s.bld.length];
+      X.fillStyle=col;X.fillRect(bx,by,b.w,bh);
+      // roof shadow line
+      X.fillStyle='rgba(0,0,0,.10)';X.fillRect(bx,by,b.w,2);
+      // right side shadow
+      X.fillStyle='rgba(0,0,0,.07)';X.fillRect(bx+b.w-3,by,3,bh);
+      // windows
+      let wi=0;
+      for(let wy=by+5;wy<gy-4;wy+=9)
+        for(let wx=bx+4;wx<bx+b.w-4;wx+=7,wi++)
+          if(b.wi[wi%8]){X.fillStyle=s.win;X.fillRect(wx,wy,3,4);}
+    });
+  }, TW_B, parallax);
+  X.restore();
+}
+
+// Trees — bottom of trunk anchored to ground line (gy)
+function drawTreeStrip(s,a,trees,tw,parallax,hscale){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a;
+  tile(ox=>{
+    trees.forEach((t,ti)=>{
+      const tx=~~(ox+t.x), th=~~(t.h*hscale);
+      const tw2=~~(th*.52);
+      if(tx+tw2<0||tx>W)return;
+      const tbase=gy; // trunk bottom = ground level
+      // Trunk: sits from tbase-th*0.4 to tbase
+      X.fillStyle=s.trunk;
+      X.fillRect(tx+~~(tw2/2)-2, tbase-~~(th*.40), 4, ~~(th*.40));
+      // Canopy tiers, all measured from tbase upward
+      const cols=[s.tree[ti%3],s.tree[(ti+1)%3],s.tree[(ti+2)%3]];
+      [[0,.44,.97],[.28,.80],[.52,.66]].forEach(([yo,wr],li)=>{
+        const lw=~~(tw2*wr), lx=tx+~~((tw2-lw)/2);
+        const ly=tbase-th+~~(th*yo);
+        X.fillStyle=cols[li];X.fillRect(lx,ly,lw,~~(th*.32));
+        X.fillStyle='rgba(0,0,0,.09)';X.fillRect(lx,ly,3,~~(th*.32));
+      });
+    });
+  }, tw, parallax);
+  X.restore();
+}
+
+function drawGround(s,a){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a;
+  const g=X.createLinearGradient(0,gy,0,H);
+  g.addColorStop(0,s.g0);g.addColorStop(1,s.g1);
+  X.fillStyle=g;X.fillRect(0,gy,W,GND);
+  // subtle texture lines
+  X.fillStyle='rgba(0,0,0,.04)';
+  for(let i=0;i<3;i++) X.fillRect(0,gy+~~(i*GND*.28+5),W,1);
+  X.restore();
+}
+
+function drawDeco(s,a){
+  const gy=H-GND;
+  X.save();X.globalAlpha=a;
+  const off=(scrl*.78)%200;
+  const reps=Math.ceil(W/200)+2;
+  DECO.forEach((d,di)=>{
+    for(let r=-1;r<reps;r++){
+      const dx=~~(d.x-off+r*200);
+      if(dx<-4||dx>W+4) continue;
+      const dy=gy+2+di%5*2; // on ground surface
+      if(s.deco==='flowers'||s.deco==='grass'){
+        const fc=s.dk[di%s.dk.length];
+        X.fillStyle=s.g0;X.fillRect(dx,dy,1,d.sz*2+1);
+        X.fillStyle=fc;X.fillRect(dx-d.sz,dy-d.sz,d.sz*2+1,d.sz*2+1);
+      } else if(s.deco==='leaves'){
+        X.fillStyle=s.dk[di%s.dk.length];X.fillRect(dx,dy,d.sz+2,d.sz+1);
+      } else {
+        X.fillStyle='rgba(255,255,255,.82)';
+        X.beginPath();X.arc(dx,dy,d.sz,0,6.28);X.fill();
+      }
+    }
+  });
+  X.restore();
+}
+
+function drawSnow(s,a,dt){
+  if(!s.hasSnow)return;
+  X.save();
+  SNOWP.forEach(sn=>{
+    sn.y=(sn.y+sn.v*dt)%(H+14);
+    sn.x=((sn.x+Math.sin(T*.65+sn.ph)*12*dt)+W+18)%(W+20)-10;
+    X.globalAlpha=a*.68;X.fillStyle='rgba(255,255,255,.92)';
+    X.beginPath();X.arc(sn.x,sn.y,sn.r,0,6.28);X.fill();
+  });
+  X.restore();
+}
+
+function drawWorld(s,a,dt){
+  drawSky(s,a);
+  drawCelestial(s,a);
+  drawClouds(s,a,dt);
+  drawBuildingStrip(s,a,.16,.72);   // far buildings, shorter
+  drawTreeStrip(s,a,TREES_F,TW_TF,.22,1.1);  // far trees
+  drawBuildingStrip(s,a,.38,1.0);   // near buildings, full height
+  drawTreeStrip(s,a,TREES_N,TW_TN,.72,.85);  // near trees
+  drawGround(s,a);
+  drawDeco(s,a);
+  drawSnow(s,a,dt);
+}
+
+/* ═══════════════════════════════════════════════════════
+   ORANGE KAWAII PIXEL CAT — menghadap kanan, jalan 4 kaki
+   Referensi: duduk kawaii pixel (foto), tapi jalan
+   Warna oren: body #f4a840, highlight #f8c870, shadow #d4782a
+════════════════════════════════════════════════════════ */
+const SZ=P; // pixel size alias
+
+// Palette kucing oren kawaii
+const K={
+  out: '#7a3010',   // outline coklat gelap (bukan hitam)
+  body:'#f4a840',   // oren utama
+  hi:  '#f8cc70',   // highlight oren muda
+  sh:  '#d4782a',   // shadow oren tua
+  wh:  '#f8f4f0',   // putih (dada, pipi, ujung kaki)
+  earI:'#f0a8b8',   // dalam telinga pink
+  nose:'#e86070',   // hidung merah muda
+  eye: '#3a2858',   // mata ungu gelap
+  pupil:'#18102e',  // pupil
+  eyeS:'rgba(255,255,255,.92)', // kilap mata
+  mth: '#c04860',   // mulut
+  wsk: 'rgba(255,245,230,.72)', // kumis
+  tail:'#e89030',   // ekor
+  tailT:'#f8c870',  // ujung ekor
+  blush:'rgba(240,140,120,.28)', // pipi blush
+  stripe:'rgba(190,90,20,.18)', // garis tabby
+};
+
+// Gambar satu "pixel" kucing dengan koordinat grid
+// cat menghadap KANAN: gx=0 = kiri badan, x meningkat ke kanan
+function kp(bx,by,gx,gy,w,h,col,al){
+  if(al!==undefined){X.save();X.globalAlpha=al;}
+  X.fillStyle=col;
+  X.fillRect(~~(bx+gx*SZ),~~(by+gy*SZ),w*SZ,h*SZ);
+  if(al!==undefined)X.restore();
+}
+
+// Ekor bezier — muncul dari punggung kiri (belakang kucing)
+function drawOrangeTail(bx,by,swing){
+  const tx=bx+1*SZ, ty=by+3*SZ;
+  const sw=swing*8;
+  X.save();
+  // outline
+  X.strokeStyle=K.out;X.lineWidth=3.6*SZ;X.lineCap='round';
+  X.beginPath();X.moveTo(tx,ty);
+  X.bezierCurveTo(tx-4*SZ,ty-3*SZ+sw*.2, tx-7*SZ,ty-9*SZ+sw, tx-4*SZ,ty-13*SZ+sw);
+  X.stroke();
+  // isi oren
+  X.strokeStyle=K.tail;X.lineWidth=2.2*SZ;
+  X.beginPath();X.moveTo(tx,ty);
+  X.bezierCurveTo(tx-4*SZ,ty-3*SZ+sw*.2, tx-7*SZ,ty-9*SZ+sw, tx-4*SZ,ty-13*SZ+sw);
+  X.stroke();
+  // ujung lebih terang
+  X.strokeStyle=K.tailT;X.lineWidth=1.0*SZ;
+  X.beginPath();X.moveTo(tx-5*SZ,ty-10*SZ+sw);
+  X.bezierCurveTo(tx-7*SZ,ty-11*SZ+sw, tx-6*SZ,ty-13*SZ+sw, tx-4*SZ,ty-13*SZ+sw);
+  X.stroke();
+  X.restore();
+}
+
+// Satu kaki: upper (pangkal) + lower (betis) + paw
+// px0,py0 = pangkal kaki di canvas; fwd = offset maju (+ ke kanan), lift = tinggi angkat
+function drawKaki(px0,py0,fwd,lift,near){
+  const al=near?1:.44;
+  const ox=~~(fwd*SZ), oy=~~(-lift*SZ*.5);
+  X.save();X.globalAlpha=al;
+  // upper leg
+  X.fillStyle=K.out;X.fillRect(~~px0+ox-SZ,~~py0+oy,3*SZ,5*SZ);
+  X.fillStyle=near?K.body:K.sh;X.fillRect(~~px0+ox,~~py0+oy,2*SZ,5*SZ);
+  X.fillStyle=K.hi;X.fillRect(~~px0+ox+SZ,~~py0+oy,SZ,2*SZ);
+  // lower leg (shin angled slightly)
+  const lx=~~px0+ox-SZ, ly=~~py0+oy+4*SZ;
+  X.fillStyle=K.out;X.fillRect(lx,ly,3*SZ,4*SZ);
+  X.fillStyle=near?K.body:K.sh;X.fillRect(lx+SZ,ly,2*SZ,4*SZ);
+  // paw (white tip)
+  X.fillStyle=K.out;X.fillRect(lx-SZ,ly+3*SZ,5*SZ,2*SZ);
+  X.fillStyle=K.wh;X.fillRect(lx,ly+3*SZ,3*SZ,SZ);
+  X.restore();
+}
+
+function drawOrangeCat(bx,groundY,T){
+  // Ukuran: body ~20px wide x ~10px tall, kaki ~8px, total ~18px ke atas dari groundY
+  const TOTAL_H=20; // total tinggi dalam grid units
+  const by=groundY-(TOTAL_H)*SZ; // y atas badan
+
+  const breath=Math.sin(T*2.0)*.8*SZ;
+  const bob=Math.abs(Math.sin(T*2.2*Math.PI*2))*.6*SZ; // bounce saat jalan
+  const tailSwing=Math.sin(T*2.4);
+  const earFlick=Math.sin(T*13.5)>.93;
+  const blink=(T%5.5)>5.25;
+
+  // Gait diagonal trot (cat walk)
+  const cyc=T*2.0*Math.PI*2;
+  const phA=Math.sin(cyc);           // FL + RR
+  const phB=Math.sin(cyc+Math.PI);   // FR + RL
+  const liftA=Math.max(0,phA);
+  const liftB=Math.max(0,phB);
+
+  const fl_f=phA*2.4, fl_l=liftA*2.8;  // front-left (dekat)
+  const fr_f=phB*2.4, fr_l=liftB*2.8;  // front-right (jauh)
+  const rl_f=phB*2.0, rl_l=liftB*2.2;  // rear-left (dekat)
+  const rr_f=phA*2.0, rr_l=liftA*2.2;  // rear-right (jauh)
+
+  const by2=by+breath+bob;
+
+  // ── EKOR (digambar duluan, paling belakang) ──
+  drawOrangeTail(bx,by2,tailSwing);
+
+  // ── KAKI JAUH (digambar sebelum badan) ──
+  // rear-right jauh
+  drawKaki(bx+12*SZ,by2+9*SZ+rr_f*SZ*.4,rr_f,rr_l,false);
+  // front-right jauh
+  drawKaki(bx+4*SZ, by2+9*SZ+fr_f*SZ*.4,fr_f,fr_l,false);
+
+  // ── BADAN ──
+  const B=(gx,gy,w,h,col,al)=>kp(bx,by2,gx,gy,w,h,col,al);
+  // Shadow bawah
+  B(1,9,14,4,K.sh);
+  // Outline badan
+  B(0,4,16,8,K.out);
+  // Isi utama oren
+  B(1,4,14,8,K.body);
+  // Highlight punggung
+  B(2,4,11,2,K.hi);B(3,4,7,1,K.hi);
+  // Dada putih (area depan badan)
+  B(13,5,2,5,K.wh);B(14,5,2,4,K.wh);
+  // Perut putih
+  B(4,9,8,2,K.wh);
+  // Sisi gelap kiri
+  B(1,5,2,6,K.sh,.5);
+  // Garis belang tabby
+  B(4,4,1,4,K.stripe);B(7,4,1,3,K.stripe);B(10,4,1,3,K.stripe);
+  // Leher sambungan ke kepala
+  B(14,5,3,4,K.body);B(15,5,2,3,K.hi);
+
+  // ── KAKI DEKAT (digambar setelah badan) ──
+  // rear-left dekat
+  drawKaki(bx+12*SZ,by2+9*SZ+rl_f*SZ*.4,rl_f,rl_l,true);
+  // front-left dekat
+  drawKaki(bx+4*SZ, by2+9*SZ+fl_f*SZ*.4,fl_f,fl_l,true);
+
+  // ── KEPALA (di kanan, karena menghadap kanan) ──
+  // Head anchor: kanan badan = bx+16*SZ, head tumbuh ke kanan
+  const hx=bx+14*SZ, hy=~~(by2+1*SZ);
+  const H2=(gx,gy,w,h,col,al)=>kp(hx,hy,gx,gy,w,h,col,al);
+
+  // Telinga kiri (jauh)
+  H2(2,-3,2,3,K.out,.6);H2(2,-3,2,2,K.body,.6);H2(3,-2,1,2,K.earI,.6);
+  // Telinga kanan (dekat, rounded kawaii)
+  H2(5,-4,3,4,K.out);H2(6,-4,2,4,K.body);H2(6,-3,1,2,earFlick?'#ff9aaa':K.earI);
+
+  // Kepala utama — rounded kawaii
+  H2(0,0,10,9,K.out);H2(1,0,8,9,K.out);
+  H2(1,0,8,9,K.body);H2(0,1,10,7,K.body);
+  // Highlight atas kepala
+  H2(2,0,5,2,K.hi);H2(1,1,2,1,K.hi);
+  // Pipi putih kanan (moncong)
+  H2(8,4,3,4,K.wh);H2(8,3,2,2,K.wh);
+  // Shadow kiri kepala
+  H2(0,2,2,5,K.sh,.45);
+  // Pipi blush
+  H2(1,5,3,2,K.blush);H2(7,5,3,2,K.blush);
+
+  // ── MATA ──
+  if(blink){
+    H2(2,3,3,1,K.out);H2(3,4,1,1,K.out);
+    H2(6,3,3,1,K.out);H2(7,4,1,1,K.out);
+  } else {
+    // Mata kiri (jauh) lebih kecil
+    H2(2,3,3,3,K.out,.75);H2(2,3,3,3,K.eye,.75);
+    H2(3,3,1,3,K.pupil,.75);H2(2,3,1,1,K.eyeS,.75);
+    // Mata kanan (dekat) kawaii besar
+    H2(6,3,3,3,K.out);H2(6,3,3,3,K.eye);
+    H2(7,3,1,3,K.pupil);H2(6,3,1,1,K.eyeS);
+    H2(8,5,1,1,'rgba(255,255,255,.35)');
+  }
+
+  // ── HIDUNG & MULUT kawaii ──
+  H2(4,6,2,1,K.nose);
+  H2(4,7,1,1,K.mth);H2(5,7,1,1,K.mth);
+  H2(3,8,2,1,K.mth);H2(5,7,1,1,K.mth);H2(6,8,2,1,K.mth);
+
+  // ── KUMIS ──
+  X.save();X.globalAlpha=.62;X.strokeStyle=K.wsk;X.lineWidth=.8;X.lineCap='round';
+  // kiri (ke kiri layar dari hidung)
+  [0,1,2].forEach(i=>{
+    X.beginPath();
+    X.moveTo(~~(hx+4*SZ),~~(hy+(6+i*.8)*SZ));
+    X.lineTo(~~(hx-3*SZ), ~~(hy+(5.4+i*.9)*SZ));
+    X.stroke();
+  });
+  // kanan (ke kanan layar)
+  [0,1,2].forEach(i=>{
+    X.beginPath();
+    X.moveTo(~~(hx+6*SZ),~~(hy+(6+i*.8)*SZ));
+    X.lineTo(~~(hx+12*SZ),~~(hy+(5.4+i*.9)*SZ));
+    X.stroke();
+  });
+  X.restore();
+}
+
+// ── Main loop ──────────────────────────────────────
+let last2=0;
+function loop(ts){
+  if(!last2)last2=ts;
+  const dt=Math.min((ts-last2)/1000,.05);
+  last2=ts; T+=dt; scrl+=SPD*dt;
+
+  sp+=dt/SD;
+  if(sp>=1){sp=0;si=(si+1)%4;badge.textContent=SEASONS[si].name;}
+
+  const fs=1-FD/SD;
+  const cA=sp<fs?1:Math.max(0,1-(sp-fs)/(FD/SD));
+  const nA=sp<fs?0:Math.min(1,(sp-fs)/(FD/SD));
+
+  X.clearRect(0,0,W,H);
+  drawWorld(SEASONS[si],Math.min(1,Math.max(0,cA)),dt);
+  if(nA>.01) drawWorld(SEASONS[(si+1)%4],Math.min(1,nA),dt);
+
+  // Kucing oren — kaki menyentuh garis tanah (H-GND)
+  drawOrangeCat(32, H-GND, T);
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
