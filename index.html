@@ -907,12 +907,13 @@ document.querySelectorAll('.panel').forEach(panel=>{
     const list = document.getElementById('waAccountsList');
     list.innerHTML = '';
     for (let i = 1; i <= 3; i++) {
-      const s = waStatuses[i] || { status: 'loading', label: `WhatsApp ${i}` };
+      const s = waStatuses[i] || { status: 'idle', label: `WhatsApp ${i}` };
       const statusLabel = {
         ready: '✓ Terhubung',
         qr: '⟳ Perlu scan QR',
         loading: '... Memuat',
         disconnected: '✗ Terputus',
+        idle: '○ Belum aktif',
       }[s.status] || s.status;
 
       const card = document.createElement('div');
@@ -924,19 +925,20 @@ document.querySelectorAll('.panel').forEach(panel=>{
           <div class="wa-account-label">${s.label}</div>
           <div class="wa-account-sub">${s.pushname ? `${s.pushname} · +${s.phoneNumber}` : statusLabel}</div>
         </div>
-        <div class="wa-status-dot ${s.status}"></div>
+        <div class="wa-status-dot ${s.status === 'idle' ? 'disconnected' : s.status}"></div>
       `;
       card.onclick = () => selectWA(i, card);
       list.appendChild(card);
     }
   }
 
-  function selectWA(id, card) {
+  async function selectWA(id, card) {
     document.querySelectorAll('.wa-account-card').forEach(c => c.classList.remove('selected'));
     card.classList.add('selected');
     selectedWA = id;
 
     const s = waStatuses[id];
+
     if (s?.status === 'ready') {
       setNextBtn('Pilih Grup →', false);
     } else if (s?.status === 'qr') {
@@ -944,7 +946,24 @@ document.querySelectorAll('.panel').forEach(panel=>{
     } else if (s?.status === 'loading') {
       setNextBtn('Sedang memuat...', true);
     } else {
-      setNextBtn('WA tidak tersedia', true);
+      // idle / disconnected — activate dulu
+      setNextBtn('Mengaktifkan WA...', true);
+      try {
+        await fetch(`${API}/wa/${id}/activate`, { method: 'POST' });
+        // Refresh status
+        const res = await fetch(`${API}/wa/all-status`);
+        waStatuses = await res.json();
+        renderWAAccounts();
+        // Re-select card yang sama
+        const newCard = document.querySelector(`.wa-account-card[data-id="${id}"]`);
+        if (newCard) { newCard.classList.add('selected'); }
+        const newStatus = waStatuses[id]?.status;
+        if (newStatus === 'ready') setNextBtn('Pilih Grup →', false);
+        else if (newStatus === 'qr' || newStatus === 'loading') setNextBtn('Scan QR →', false);
+        else setNextBtn('WA tidak tersedia', true);
+      } catch(e) {
+        setNextBtn('Gagal aktifkan WA', true);
+      }
     }
   }
 

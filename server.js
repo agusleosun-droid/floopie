@@ -1,7 +1,7 @@
 /**
  * ══════════════════════════════════════════════
  *   OCR WA SENDER — server.js
- *   3 WhatsApp Client via whatsapp-web.js
+ *   LAZY INIT: Chromium hanya start saat dipilih
  * ══════════════════════════════════════════════
  */
 
@@ -18,58 +18,39 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// ──────────────────────────────────────────────
-//   AUTO-DETECT CHROMIUM PATH
-// ──────────────────────────────────────────────
 function findChromium() {
-  // Kalau sudah di-set via env, pakai itu
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    if (fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-      console.log(`[Chromium] Using env path: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
-      return process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
+  if (process.env.PUPPETEER_EXECUTABLE_PATH &&
+      fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
-  // Cari di PATH sistem
-  const candidates = ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'];
-  for (const name of candidates) {
+  for (const name of ['chromium', 'chromium-browser', 'google-chrome']) {
     try {
       const p = execSync(`which ${name} 2>/dev/null`).toString().trim();
-      if (p && fs.existsSync(p)) {
-        console.log(`[Chromium] Found at: ${p}`);
-        return p;
-      }
+      if (p && fs.existsSync(p)) return p;
     } catch(e) {}
   }
-  // Cari di nix store
   try {
-    const nixPath = execSync(`find /nix/store -name "chromium" -type f 2>/dev/null | grep -v sandbox | head -1`).toString().trim();
-    if (nixPath && fs.existsSync(nixPath)) {
-      console.log(`[Chromium] Found in nix store: ${nixPath}`);
-      return nixPath;
-    }
+    const p = execSync(`find /nix/store -name "chromium" -type f 2>/dev/null | grep -v sandbox | head -1`).toString().trim();
+    if (p && fs.existsSync(p)) return p;
   } catch(e) {}
-
-  console.warn('[Chromium] Not found! Will use puppeteer bundled chromium');
   return undefined;
 }
 
 const CHROMIUM_PATH = findChromium();
+console.log(`[Chromium] ${CHROMIUM_PATH || 'bundled'}`);
 
-// ──────────────────────────────────────────────
-//   STATE: 3 WA Clients
-// ──────────────────────────────────────────────
 const WA_COUNT = 3;
 const clients = {};
 const clientState = {};
 const qrExpireTimers = {};
 const reinitTimers = {};
-
 const LABELS = { 1:'WhatsApp 1', 2:'WhatsApp 2', 3:'WhatsApp 3' };
 const QR_TTL = 60000;
 
-// ──────────────────────────────────────────────
-//   HELPERS
-// ──────────────────────────────────────────────
+for (let i = 1; i <= WA_COUNT; i++) {
+  clientState[i] = { status: 'idle', qrDataUrl: null, label: LABELS[i], phoneNumber: null, pushname: null };
+}
+
 function clearQR(id) {
   if (clientState[id]) clientState[id].qrDataUrl = null;
   if (qrExpireTimers[id]) { clearTimeout(qrExpireTimers[id]); qrExpireTimers[id] = null; }
@@ -77,61 +58,35 @@ function clearQR(id) {
 
 function scheduleReinit(id, delay = 3000) {
   if (reinitTimers[id]) return;
-  reinitTimers[id] = setTimeout(() => {
-    reinitTimers[id] = null;
-    initClient(id);
-  }, delay);
+  reinitTimers[id] = setTimeout(() => { reinitTimers[id] = null; initClient(id); }, delay);
 }
 
-// ──────────────────────────────────────────────
-//   INIT CLIENT
-// ──────────────────────────────────────────────
 async function initClient(id) {
   if (clients[id]) {
     try { await clients[id].destroy(); } catch(e) {}
     clients[id] = null;
   }
 
-  console.log(`[WA${id}] Initializing...`);
-  clientState[id] = {
-    status: 'loading',
-    qrDataUrl: null,
-    label: LABELS[id],
-    phoneNumber: null,
-    pushname: null,
-  };
+  console.log(`[WA${id}] Starting Chromium...`);
+  clientState[id] = { status: 'loading', qrDataUrl: null, label: LABELS[id], phoneNumber: null, pushname: null };
 
-  const puppeteerConfig = {
+  const cfg = {
     headless: true,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu',
-      '--disable-extensions',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-sync',
-      '--disable-translate',
-      '--hide-scrollbars',
-      '--metrics-recording-only',
-      '--mute-audio',
-      '--safebrowsing-disable-auto-update',
+      '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas','--no-first-run','--no-zygote',
+      '--single-process','--disable-gpu','--disable-extensions',
+      '--disable-background-networking','--disable-default-apps',
+      '--disable-sync','--disable-translate','--hide-scrollbars',
+      '--mute-audio','--safebrowsing-disable-auto-update',
       '--js-flags=--max-old-space-size=256',
-    ],
+    ]
   };
-
-  if (CHROMIUM_PATH) {
-    puppeteerConfig.executablePath = CHROMIUM_PATH;
-  }
+  if (CHROMIUM_PATH) cfg.executablePath = CHROMIUM_PATH;
 
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: `wa-client-${id}` }),
-    puppeteer: puppeteerConfig,
+    puppeteer: cfg,
   });
 
   client.on('qr', async (qr) => {
@@ -147,9 +102,7 @@ async function initClient(id) {
           console.log(`[WA${id}] QR expired`);
         }
       }, QR_TTL);
-    } catch (e) {
-      console.error(`[WA${id}] QR error:`, e.message);
-    }
+    } catch(e) { console.error(`[WA${id}] QR error:`, e.message); }
   });
 
   client.on('ready', () => {
@@ -164,65 +117,49 @@ async function initClient(id) {
   client.on('auth_failure', async (msg) => {
     console.error(`[WA${id}] Auth failure:`, msg);
     clearQR(id);
-    clientState[id].status = 'disconnected';
+    clientState[id].status = 'idle';
     try { await client.destroy(); } catch(e) {}
-    scheduleReinit(id, 3000);
+    clients[id] = null;
   });
 
   client.on('disconnected', async (reason) => {
     console.warn(`[WA${id}] Disconnected: ${reason}`);
     clearQR(id);
-    clientState[id].status = 'disconnected';
+    clientState[id].status = 'idle';
     clientState[id].phoneNumber = null;
     clientState[id].pushname = null;
     try { await client.destroy(); } catch(e) {}
-    scheduleReinit(id, 3000);
+    clients[id] = null;
+    if (reason !== 'LOGOUT') scheduleReinit(id, 5000);
   });
 
   client.initialize();
   clients[id] = client;
 }
 
-// Inisialisasi semua 3 WA dengan jeda 5 detik agar tidak OOM
-for (let i = 1; i <= WA_COUNT; i++) {
-  setTimeout(() => initClient(i), (i - 1) * 5000);
-}
-
-// ──────────────────────────────────────────────
-//   HEALTH CHECK: deteksi sesi mati setiap 30 detik
-// ──────────────────────────────────────────────
 setInterval(async () => {
   for (let i = 1; i <= WA_COUNT; i++) {
     if (clientState[i]?.status !== 'ready') continue;
     try {
-      // Coba ping WA — kalau gagal berarti sesi mati
       const state = await clients[i].getState();
       if (!state) throw new Error('No state');
     } catch(e) {
-      console.warn(`[WA${i}] Health check failed: ${e.message} — reinitializing`);
-      clientState[i].status = 'disconnected';
+      console.warn(`[WA${i}] Health check failed — marking idle`);
+      clientState[i].status = 'idle';
+      clientState[i].phoneNumber = null;
+      clientState[i].pushname = null;
       clearQR(i);
       try { await clients[i].destroy(); } catch(_) {}
-      scheduleReinit(i, 2000);
+      clients[i] = null;
     }
   }
-}, 30000);
-
-// ──────────────────────────────────────────────
-//   API ENDPOINTS
-// ──────────────────────────────────────────────
+}, 60000);
 
 app.get('/api/wa/all-status', (req, res) => {
   const result = {};
   for (let i = 1; i <= WA_COUNT; i++) {
     const s = clientState[i] || {};
-    result[i] = {
-      id: i,
-      label: LABELS[i],
-      status: s.status || 'loading',
-      phoneNumber: s.phoneNumber,
-      pushname: s.pushname,
-    };
+    result[i] = { id: i, label: LABELS[i], status: s.status || 'idle', phoneNumber: s.phoneNumber, pushname: s.pushname };
   }
   res.json(result);
 });
@@ -232,6 +169,16 @@ app.get('/api/wa/:id/status', (req, res) => {
   if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
   const s = clientState[id];
   res.json({ id, label: LABELS[id], status: s.status, phoneNumber: s.phoneNumber, pushname: s.pushname });
+});
+
+app.post('/api/wa/:id/activate', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
+  const status = clientState[id].status;
+  if (status === 'ready') return res.json({ status: 'ready' });
+  if (status === 'loading' || status === 'qr') return res.json({ status });
+  await initClient(id);
+  res.json({ status: 'loading' });
 });
 
 app.get('/api/wa/:id/qr', (req, res) => {
@@ -247,44 +194,20 @@ app.get('/api/wa/:id/groups', async (req, res) => {
   if (!clients[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
   try {
-    await sleep(2000);
+    await sleep(1500);
     const chats = await clients[id].getChats();
-    console.log(`[WA${id}] Total chats: ${chats.length}, groups: ${chats.filter(c=>c.isGroup).length}`);
+    console.log(`[WA${id}] chats: ${chats.length}, groups: ${chats.filter(c=>c.isGroup).length}`);
     const groups = chats
       .filter(c => c.isGroup)
       .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ groups });
-  } catch (e) {
-    console.error(`[WA${id}] Groups error: ${e.message}`);
-    // Detached frame = Chromium crash, reinit
-    if (e.message.includes('detached') || e.message.includes('Frame') || e.message.includes('Session closed')) {
-      console.log(`[WA${id}] Chromium crashed, reinitializing...`);
-      clientState[id].status = 'disconnected';
-      scheduleReinit(id, 1000);
-      return res.status(503).json({ error: 'WA restart, silakan tunggu 15 detik lalu coba lagi' });
-    }
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Debug: cek raw chats
-app.get('/api/wa/:id/debug', async (req, res) => {
-  const id = parseInt(req.params.id);
-  if (!clients[id] || clientState[id]?.status !== 'ready')
-    return res.status(400).json({ error: 'WA not ready' });
-  try {
-    const chats = await clients[id].getChats();
-    res.json({
-      total: chats.length,
-      groups: chats.filter(c => c.isGroup).length,
-      sample: chats.slice(0, 5).map(c => ({ name: c.name, isGroup: c.isGroup }))
-    });
   } catch(e) {
-    if (e.message.includes('detached') || e.message.includes('Frame')) {
-      clientState[id].status = 'disconnected';
-      scheduleReinit(id, 1000);
-      return res.status(503).json({ error: 'Chromium crashed, reinitializing...' });
+    console.error(`[WA${id}] Groups error: ${e.message}`);
+    if (e.message.includes('detached') || e.message.includes('Frame') || e.message.includes('Session')) {
+      clientState[id].status = 'idle';
+      clients[id] = null;
+      return res.status(503).json({ error: 'WA terputus, silakan pilih WA lagi' });
     }
     res.status(500).json({ error: e.message });
   }
@@ -294,38 +217,33 @@ app.post('/api/wa/:id/send', async (req, res) => {
   const id = parseInt(req.params.id);
   if (!clients[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
-
   const { groupId, messages, delay = 800 } = req.body;
   if (!groupId || !Array.isArray(messages) || messages.length === 0)
     return res.status(400).json({ error: 'groupId dan messages diperlukan' });
-
   const safeDelay = Math.min(Math.max(parseInt(delay) || 800, 500), 5000);
   const results = [];
-
   for (let i = 0; i < messages.length; i++) {
     try {
       await clients[id].sendMessage(groupId, messages[i]);
       results.push({ index: i, message: messages[i], status: 'sent' });
       console.log(`[WA${id}] Sent [${i+1}/${messages.length}]: ${messages[i]}`);
-    } catch (e) {
+    } catch(e) {
       results.push({ index: i, message: messages[i], status: 'error', error: e.message });
     }
     if (i < messages.length - 1) await sleep(safeDelay);
   }
-
   const sent = results.filter(r => r.status === 'sent').length;
   res.json({ success: true, total: messages.length, sent, errors: results.length - sent, results });
 });
 
 app.post('/api/wa/:id/restart', async (req, res) => {
   const id = parseInt(req.params.id);
-  if (!clients[id]) return res.status(404).json({ error: 'WA not found' });
-  try { await clients[id].destroy(); } catch(e) {}
-  setTimeout(() => initClient(id), 1000);
-  res.json({ success: true, message: `WA${id} restarting...` });
+  if (!clientState[id]) return res.status(404).json({ error: 'WA not found' });
+  if (clients[id]) { try { await clients[id].destroy(); } catch(e) {} clients[id] = null; }
+  clientState[id].status = 'idle';
+  res.json({ success: true });
 });
 
-// Health check
 app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -334,5 +252,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  ✓ Server running on port ${PORT}`);
   console.log(`  ✓ Chromium: ${CHROMIUM_PATH || 'bundled'}`);
-  console.log('  ✓ Initializing 3 WA clients (staggered 5s each)...\n');
+  console.log('  ✓ Lazy init — Chromium starts only when WA is selected\n');
 });
