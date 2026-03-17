@@ -8,6 +8,13 @@ nixPkgs = [
   "dejavu_fonts",
 ]
 
+[phases.install]
+cmds = ["npm install --legacy-peer-deps"]
+
 [variables]
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
 PUPPETEER_EXECUTABLE_PATH = "/run/current-system/sw/bin/chromium"
+NODE_ENV = "production"
+
+[start]
+cmd = "node server.js"
