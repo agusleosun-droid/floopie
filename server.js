@@ -227,6 +227,8 @@ app.get('/api/wa/:id/groups', async (req, res) => {
   if (!clients[id] || clientState[id]?.status !== 'ready')
     return res.status(400).json({ error: 'WA not ready' });
   try {
+    // Tunggu sebentar agar WA stabil setelah ready
+    await sleep(1000);
     const chats = await clients[id].getChats();
     const groups = chats
       .filter(c => c.isGroup)
@@ -234,7 +236,20 @@ app.get('/api/wa/:id/groups', async (req, res) => {
       .sort((a, b) => a.name.localeCompare(b.name));
     res.json({ groups });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error(`[WA${id}] Groups error:`, e.message);
+    // Kalau gagal, coba sekali lagi setelah 2 detik
+    try {
+      await sleep(2000);
+      const chats = await clients[id].getChats();
+      const groups = chats
+        .filter(c => c.isGroup)
+        .map(c => ({ id: c.id._serialized, name: c.name, participantCount: c.participants?.length || 0 }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      res.json({ groups });
+    } catch (e2) {
+      console.error(`[WA${id}] Groups retry error:`, e2.message);
+      res.status(500).json({ error: e2.message });
+    }
   }
 });
 
