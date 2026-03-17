@@ -6,20 +6,26 @@
  * ══════════════════════════════════════════════
  */
 
-const express   = require('express');
-const cors      = require('cors');
-const qrcode    = require('qrcode');
-const path      = require('path');
-const fs        = require('fs');
-const P         = require('pino');
+import express   from 'express';
+import cors      from 'cors';
+import qrcode    from 'qrcode';
+import path      from 'path';
+import fs        from 'fs';
+import P         from 'pino';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
-const {
-  default: makeWASocket,
+import {
+  default as makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-} = require('@whiskeysockets/baileys');
+} from '@whiskeysockets/baileys';
+
+// ESM tidak punya __dirname — definisikan manual
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -186,7 +192,6 @@ async function startClient(id) {
     // Terputus
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      const reason = DisconnectReason;
       console.warn(`[WA${id}] Disconnected (code: ${code})`);
       clearQR(id);
       clientState[id].status = 'idle';
@@ -222,7 +227,6 @@ setInterval(() => {
     const id = acc.id;
     if (clientState[id]?.status !== 'ready') return;
     try {
-      const state = sockets[id]?.authState?.creds;
       if (!sockets[id] || !sockets[id].user) throw new Error('No user');
     } catch(e) {
       console.warn(`[WA${id}] Health check failed — marking idle`);
